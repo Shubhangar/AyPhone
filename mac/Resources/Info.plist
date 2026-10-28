@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key><string>AyPhone</string>
+    <key>CFBundleDisplayName</key><string>AyPhone</string>
+    <key>CFBundleIdentifier</key><string>com.ayphone.mac</string>
+    <key>CFBundleExecutable</key><string>AyPhone</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>0.1.0</string>
+    <key>CFBundleVersion</key><string>1</string>
+    <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>NSHighResolutionCapable</key><true/>
+    <key>NSLocalNetworkUsageDescription</key><string>AyPhone connects directly to your Android phone on your local network.</string>
+    <key>NSBluetoothAlwaysUsageDescription</key><string>AyPhone can act as a Bluetooth hands-free device so you can talk on phone calls through your Mac.</string>
+    <key>NSMicrophoneUsageDescription</key><string>AyPhone uses the microphone when you take a phone call on your Mac.</string>
+    <key>NSBonjourServices</key>
+    <array><string>_droidlink._tcp</string></array>
+    <!-- Finder right-click → Quick Actions/Services → Send to Phone -->
+    <key>NSServices</key>
+    <array>
+        <dict>
+            <key>NSMenuItem</key>
+            <dict><key>default</key><string>Send to Phone</string></dict>
+            <key>NSMessage</key><string>sendToPhone</string>
+            <key>NSRequiredContext</key><dict/>
+            <key>NSSendFileTypes</key>
+            <array><string>public.item</string></array>
+        </dict>
+    </array>
+    <!-- Lets files be dropped on the Dock icon; rank None so we never become a default app. -->
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key><string>Any file</string>
+            <key>CFBundleTypeRole</key><string>Viewer</string>
+            <key>LSHandlerRank</key><string>None</string>
+            <key>LSItemContentTypes</key>
+            <array><string>public.item</string></array>
+        </dict>
+    </array>
+</dict>
+</plist>

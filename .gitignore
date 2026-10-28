@@ -1,0 +1,21 @@
+# Signing keys and their passwords: back these up privately, never commit them.
+mac/signing/
+android/keystore/
+android/keystore.properties
+
+# Build output
+mac/.build/
+mac/build/
+android/.gradle/
+android/build/
+android/app/build/
+android/build.log
+android/local.properties
+.idea/
+*.iml
+
+# Installers go on a GitHub release, not in the repository.
+dist/*
+!dist/INSTALL.md
+
+.DS_Store

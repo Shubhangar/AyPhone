@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AyPhone</string>
+    <string name="share_label">Send to Mac</string>
+    <string name="control_label">AyPhone · control and clipboard</string>
+    <string name="control_description">Lets your Mac tap, swipe, go Back or Home, and type on this phone while you mirror its screen in AyPhone, and notices when you tap Copy so what you copied appears on your Mac. AyPhone only looks for Copy buttons and copy confirmations; nothing else is read, and nothing is sent anywhere but your paired Mac.</string>
+    <string name="tile_label">Send clipboard to Mac</string>
+</resources>
