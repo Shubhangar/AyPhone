@@ -2,6 +2,20 @@
 
 AyPhone connects an Android phone to a Mac over local Wi-Fi or USB (or Bluetooth when the Wi-Fi keeps them apart), with no cloud and no account. It is modeled on LinkMyMac.
 
+## Download
+
+You need both apps:
+
+| | Download | Needs |
+|---|---|---|
+| **Mac** | [AyPhone-0.1.0-mac.dmg](https://github.com/Shubhangar/AyPhone/releases/download/v0.1.0/AyPhone-0.1.0-mac.dmg) | macOS 14 or later, Apple silicon or Intel |
+| **Android phone** | [AyPhone-0.1.0-android.apk](https://github.com/Shubhangar/AyPhone/releases/download/v0.1.0/AyPhone-0.1.0-android.apk) | Android 10 or later |
+
+Then follow the **[installation guide](dist/INSTALL.md)**: drag the Mac app to Applications, install the APK on the phone, and pair by scanning the QR code on the Mac. All versions are on the [Releases page](https://github.com/Shubhangar/AyPhone/releases/latest).
+
+## What it does
+
+
 | Feature | How |
 |---|---|
 | Reconnects when the Mac wakes | The Mac re-announces itself over Bonjour on wake; the phone retries immediately on that or any network change |
