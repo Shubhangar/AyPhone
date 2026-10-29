@@ -56,6 +56,10 @@ final class BluetoothCallAudio: NSObject, ObservableObject {
     /// two live ones for the same phone both answer when its Bluetooth link comes back and
     /// crash it too.
     private var handsFreeByPhone: [String: IOBluetoothHandsFreeDevice] = [:]
+    /// Hands-free objects whose connect hasn't answered yet. Disconnecting one of these makes
+    /// macOS send the phone a command through a channel it has already freed once the phone
+    /// answers (possibly minutes later), which crashes the app, so they're left to finish.
+    private var opening: Set<ObjectIdentifier> = []
     private var retryTimer: Timer?
     /// Fires if a connect attempt gets no answer, so a dead pairing entry can't stall us forever.
     private var connectTimeout: Timer?
@@ -79,10 +83,31 @@ final class BluetoothCallAudio: NSObject, ObservableObject {
     /// Stops using the current hands-free object (it stays in [handsFreeByPhone] for reuse).
     private func detachHandsFree() {
         guard let old = handsFree else { return }
+        handsFree = nil
+        // Still opening: let it finish (see [opening]); its callbacks are ignored or adopt it.
+        if opening.contains(ObjectIdentifier(old)) { return }
         // Its late callbacks would otherwise reset the state of the connection we use next.
         old.delegate = nil
         old.disconnect()
-        handsFree = nil
+    }
+
+    /// Callbacks from a hands-free object we're not using. Returns true when handled (the
+    /// caller should ignore the event). One that finishes opening is adopted if we have no
+    /// working connection, and otherwise closed now that it's safe to.
+    private func handledStray(_ device: IOBluetoothHandsFree?, connected status: NSNumber? = nil) -> Bool {
+        guard let device, device !== handsFree else { return false }
+        guard let status else { return true }
+        opening.remove(ObjectIdentifier(device))
+        guard status.int32Value == kIOReturnSuccess, let hf = device as? IOBluetoothHandsFreeDevice else { return true }
+        if enabled && !isReady {
+            log.notice("an earlier hands-free attempt answered; using it")
+            detachHandsFree()
+            handsFree = hf
+            return false
+        }
+        hf.delegate = nil
+        hf.disconnect()
+        return true
     }
 
     /// When a text arrives, macOS's hands-free code reads it from the phone over Bluetooth and
@@ -157,8 +182,19 @@ final class BluetoothCallAudio: NSObject, ObservableObject {
             return
         }
         status = .connecting(phone.name ?? "phone")
+        // Still opening from an earlier try: wait for that answer instead of connecting again.
+        guard !opening.contains(ObjectIdentifier(hf)) else {
+            log.notice("still waiting on the earlier hands-free attempt to \(phone.name ?? "?", privacy: .public)")
+            scheduleConnectTimeout()
+            return
+        }
         log.notice("connecting hands-free to \(phone.name ?? "?", privacy: .public) (\(phone.isConnected() ? "linked" : "not linked", privacy: .public), entry \(self.candidateIndex + 1) of \(self.candidates.count, privacy: .public))")
+        opening.insert(ObjectIdentifier(hf))
         hf.connect()
+        scheduleConnectTimeout()
+    }
+
+    private func scheduleConnectTimeout() {
         connectTimeout?.invalidate()
         connectTimeout = Timer.scheduledTimer(withTimeInterval: 15, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -272,6 +308,8 @@ final class BluetoothCallAudio: NSObject, ObservableObject {
 extension BluetoothCallAudio: IOBluetoothHandsFreeDeviceDelegate {
     nonisolated func handsFree(_ device: IOBluetoothHandsFree!, connected status: NSNumber!) {
         MainActor.assumeIsolated {
+            if handledStray(device, connected: status ?? NSNumber(value: -1)) { return }
+            if let device { opening.remove(ObjectIdentifier(device)) }
             let name = device?.device?.name ?? "phone"
             log.notice("hands-free connected callback, result \(status?.int32Value ?? -1, privacy: .public)")
             connectTimeout?.invalidate()
@@ -288,6 +326,8 @@ extension BluetoothCallAudio: IOBluetoothHandsFreeDeviceDelegate {
 
     nonisolated func handsFree(_ device: IOBluetoothHandsFree!, disconnected status: NSNumber!) {
         MainActor.assumeIsolated {
+            if let device { opening.remove(ObjectIdentifier(device)) }
+            if handledStray(device) { return }
             log.notice("hands-free disconnected, result \(status?.int32Value ?? -1, privacy: .public)")
             audioOnMac = false
             if enabled {
@@ -299,6 +339,7 @@ extension BluetoothCallAudio: IOBluetoothHandsFreeDeviceDelegate {
 
     nonisolated func handsFree(_ device: IOBluetoothHandsFree!, scoConnectionOpened status: NSNumber!) {
         MainActor.assumeIsolated {
+            if handledStray(device) { return }
             log.notice("call audio link opened (result \(status?.int32Value ?? -1, privacy: .public), keep on Mac: \(self.keepAudioOnMac, privacy: .public))")
             guard status?.int32Value == kIOReturnSuccess else {
                 log.notice("macOS refused the call audio; it stays on the phone")
@@ -315,6 +356,7 @@ extension BluetoothCallAudio: IOBluetoothHandsFreeDeviceDelegate {
 
     nonisolated func handsFree(_ device: IOBluetoothHandsFree!, scoConnectionClosed status: NSNumber!) {
         MainActor.assumeIsolated {
+            if handledStray(device) { return }
             log.notice("call audio link closed")
             audioOnMac = false
         }
@@ -323,6 +365,7 @@ extension BluetoothCallAudio: IOBluetoothHandsFreeDeviceDelegate {
     /// 0 none, 1 incoming (ringing), 2 outgoing dialing, 3 outgoing alerting.
     nonisolated func handsFree(_ device: IOBluetoothHandsFreeDevice!, callSetupMode: NSNumber!) {
         MainActor.assumeIsolated {
+            if handledStray(device) { return }
             log.notice("call setup mode: \(callSetupMode?.intValue ?? -1, privacy: .public)")
             ringing = callSetupMode?.intValue == 1
             if !ringing && !callActive { callerNumber = nil }
@@ -331,6 +374,7 @@ extension BluetoothCallAudio: IOBluetoothHandsFreeDeviceDelegate {
 
     nonisolated func handsFree(_ device: IOBluetoothHandsFreeDevice!, incomingCallFrom number: String!) {
         MainActor.assumeIsolated {
+            if handledStray(device) { return }
             log.notice("incoming call (number \(number?.isEmpty == false ? "present" : "hidden", privacy: .public))")
             ringing = true
             if let number, !number.isEmpty { callerNumber = number }
@@ -339,35 +383,50 @@ extension BluetoothCallAudio: IOBluetoothHandsFreeDeviceDelegate {
 
     nonisolated func handsFree(_ device: IOBluetoothHandsFreeDevice!, currentCall: [AnyHashable: Any]!) {
         MainActor.assumeIsolated {
+            if handledStray(device) { return }
             log.notice("phone call list entry: status=\(String(describing: currentCall?["IOBluetoothHandsFreeCallStatus"]), privacy: .public) direction=\(String(describing: currentCall?["IOBluetoothHandsFreeCallDirection"]), privacy: .public)")
         }
     }
 
     nonisolated func handsFree(_ device: IOBluetoothHandsFreeDevice!, ringAttempt: NSNumber!) {
         MainActor.assumeIsolated {
+            if handledStray(device) { return }
             log.notice("ring from phone")
             ringing = true
         }
     }
 
     nonisolated func handsFree(_ device: IOBluetoothHandsFreeDevice!, isServiceAvailable: NSNumber!) {
-        MainActor.assumeIsolated { log.notice("phone network service: \(isServiceAvailable?.boolValue ?? false, privacy: .public)") }
+        MainActor.assumeIsolated {
+            if handledStray(device) { return }
+            log.notice("phone network service: \(isServiceAvailable?.boolValue ?? false, privacy: .public)")
+        }
     }
 
     nonisolated func handsFree(_ device: IOBluetoothHandsFreeDevice!, signalStrength: NSNumber!) {
-        MainActor.assumeIsolated { log.notice("phone signal: \(signalStrength?.intValue ?? -1, privacy: .public)") }
+        MainActor.assumeIsolated {
+            if handledStray(device) { return }
+            log.notice("phone signal: \(signalStrength?.intValue ?? -1, privacy: .public)")
+        }
     }
 
     nonisolated func handsFree(_ device: IOBluetoothHandsFreeDevice!, batteryCharge: NSNumber!) {
-        MainActor.assumeIsolated { log.notice("phone battery: \(batteryCharge?.intValue ?? -1, privacy: .public)") }
+        MainActor.assumeIsolated {
+            if handledStray(device) { return }
+            log.notice("phone battery: \(batteryCharge?.intValue ?? -1, privacy: .public)")
+        }
     }
 
     nonisolated func handsFree(_ device: IOBluetoothHandsFreeDevice!, unhandledResultCode: String!) {
-        MainActor.assumeIsolated { log.notice("phone sent: \(unhandledResultCode ?? "", privacy: .public)") }
+        MainActor.assumeIsolated {
+            if handledStray(device) { return }
+            log.notice("phone sent: \(unhandledResultCode ?? "", privacy: .public)")
+        }
     }
 
     nonisolated func handsFree(_ device: IOBluetoothHandsFreeDevice!, isCallActive: NSNumber!) {
         MainActor.assumeIsolated {
+            if handledStray(device) { return }
             log.notice("call active: \(isCallActive?.boolValue ?? false, privacy: .public)")
             callBecameActive(isCallActive?.boolValue ?? false)
         }
