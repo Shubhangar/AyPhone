@@ -27,7 +27,7 @@ AyPhone lives in the menu bar and keeps running when you close its window.
 2. Tap it to install. Android asks you to allow installs from the app you opened it with (Files, Chrome, Drive…). Allow it, then go back and tap **Install**.
    - If Play Protect warns that the app is unknown, tap **More details → Install anyway**.
 3. Open **AyPhone** and tap **Pair with Mac**, then scan the QR code shown on the Mac's **Pairing** page. Both devices need to be on the same Wi-Fi.
-4. Work through the **Setup** list in the app: notification access, messages/contacts/calls, display over other apps, and unrestricted battery. On Samsung phones also check **Settings → Battery → Background usage limits** and make sure AyPhone isn't put to sleep.
+4. Work through the **Setup** list in the app: notification access, messages/contacts/calls, display over other apps, call controls from Mac, and unrestricted battery. **Call controls from Mac** needs the phone paired with the Mac in Bluetooth settings; Android then asks to let AyPhone manage your Mac (it may call it a watch, the only companion type Android lets apps use). It lets the Mac switch a call to the phone's speaker, mute it and hang up, for phone and WhatsApp-style calls. On Samsung phones also check **Settings → Battery → Background usage limits** and make sure AyPhone isn't put to sleep.
 
 That's it. From now on the phone reconnects automatically whenever both devices are on the same network.
 
@@ -68,7 +68,7 @@ Regular phone calls can be answered on the Mac and moved back to the phone mid-c
 
 Incoming calls then offer **Answer on Mac** and **On phone**, and during a call **Move to phone** / **Move to Mac**.
 
-Some versions of macOS don't let apps take phone-call audio. On those Macs, AyPhone still answers, declines and ends calls from the Mac, but you talk on the phone; the calls card on the Pairing page says so once it notices.
+Some versions of macOS don't let apps take phone-call audio. On those Macs, AyPhone still answers, declines and ends calls from the Mac, but you talk on the phone; the calls card on the Pairing page says so once it notices. Click **Speaker** in the call panel to put the call on the phone's loudspeaker so you don't have to pick the phone up (needs **Call controls from Mac** in the phone's setup list).
 
 ## Checking the downloads
 

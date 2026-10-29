@@ -22,6 +22,9 @@ struct MenuBarView: View {
                         RoundButton(symbol: "phone.down.fill", colors: [Theme.red, Theme.pink], size: 30) { state.callAction("decline") }
                         RoundButton(symbol: "phone.fill", colors: [Theme.green, Theme.mint], size: 30) { state.callAction("answer") }
                     } else {
+                        RoundButton(symbol: state.speakerOn ? "speaker.wave.3.fill" : "speaker.fill",
+                                    colors: state.speakerOn ? [Theme.green, Theme.mint] : [.gray, .gray.opacity(0.7)], size: 30) { state.callAction("speaker") }
+                                    .help(state.speakerOn ? "Speaker off" : "Phone speaker")
                         RoundButton(symbol: "mic.slash.fill", colors: [.gray, .gray.opacity(0.7)], size: 30) { state.callAction("mute") }
                         RoundButton(symbol: "phone.down.fill", colors: [Theme.red, Theme.pink], size: 30) { state.callAction("end") }
                     }

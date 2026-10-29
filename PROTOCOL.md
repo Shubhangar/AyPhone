@@ -55,7 +55,8 @@ Each frame is:
 | `smsSend` | M→A | `address`, `text` |
 | `smsChanged` | A→M | |
 | `call` | A→M | `state` (`ringing`/`offhook`/`idle`), `number`, `name` |
-| `callAction` | M→A | `action` (`answer`/`decline`/`end`/`mute`) |
+| `callAction` | M→A | `action` (`answer`/`decline`/`end`/`mute`/`speaker`, which toggles the loudspeaker) |
+| `callSpeaker` | A→M | `on`: whether the call is on the phone's loudspeaker (after each `speaker` action) |
 | `callerInfo` | A→M | `name` (title of the dialer's call notification: a name, or the number if unsaved) |
 | `media` | A→M | `app`, `title`, `artist`, `playing`, `art` (base64 JPEG); no `title` means nothing is playing |
 | `mediaAction` | M→A | `action` (`play`/`pause`/`next`/`previous`/`volumeUp`/`volumeDown`) |

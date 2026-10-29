@@ -287,6 +287,9 @@ struct CallCard: View {
                         RoundButton(symbol: "phone.down.fill", colors: [Theme.red, Theme.pink], size: 50) { state.callAction("decline") }
                         RoundButton(symbol: "phone.fill", colors: [Theme.green, Theme.mint], size: 50) { state.callAction("answer") }
                     } else {
+                        RoundButton(symbol: state.speakerOn ? "speaker.wave.3.fill" : "speaker.fill",
+                                    colors: state.speakerOn ? [Theme.green, Theme.mint] : [Color.gray, Color.gray.opacity(0.7)], size: 46) { state.callAction("speaker") }
+                                    .help(state.speakerOn ? "Speaker off" : "Phone speaker")
                         RoundButton(symbol: "mic.slash.fill", colors: [Color.gray, Color.gray.opacity(0.7)], size: 46) { state.callAction("mute") }
                         RoundButton(symbol: "phone.down.fill", colors: [Theme.red, Theme.pink], size: 50) { state.callAction("end") }
                     }

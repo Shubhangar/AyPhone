@@ -12,6 +12,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -88,6 +89,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.droidlink.app.R
+import com.droidlink.app.feature.CallCompanion
 import com.droidlink.app.feature.ClipboardBridge
 import com.droidlink.app.feature.FileSender
 import com.droidlink.app.feature.FindPhone
@@ -135,6 +137,17 @@ class MainActivity : ComponentActivity() {
             toast("Sending ${uris.size} file(s) to your Mac")
         }
     }
+    private val companionApproval = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) {
+        refreshTick++
+    }
+
+    private fun approveCallControls() {
+        CallCompanion.request(this, { companionApproval.launch(IntentSenderRequest.Builder(it).build()) }) { error ->
+            refreshTick++
+            if (error != null && !CallCompanion.approved(this)) toast(error)
+        }
+    }
+
     private val permissionRequest = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         refreshTick++
         if (Pairing.load(this) != null) LinkService.start(this)
@@ -260,6 +273,10 @@ class MainActivity : ComponentActivity() {
                         "Display over other apps", "Lets your Mac open apps, and paste what you copy here with ⌘V",
                         Settings.canDrawOverlays(this@MainActivity)
                     ) { appSettings(Settings.ACTION_MANAGE_OVERLAY_PERMISSION) }
+                    SetupRow(
+                        "Call controls from Mac", "Speaker, mute and hang up from your Mac. Android asks to let AyPhone manage your Mac (it may call it a watch)",
+                        CallCompanion.approved(this@MainActivity)
+                    ) { approveCallControls() }
                     SetupRow(
                         "Unrestricted battery", "Keeps the connection alive. Tap Battery, then Unrestricted",
                         getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)

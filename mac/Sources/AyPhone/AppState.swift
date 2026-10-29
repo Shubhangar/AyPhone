@@ -100,6 +100,10 @@ final class AppState: ObservableObject {
     @Published private(set) var messages: [Int64: [SmsMessage]] = [:]
     @Published var selectedThread: Int64?
     @Published private(set) var call: CallInfo?
+    /// Whether the current call's sound is on the phone's loudspeaker (the phone reports it).
+    @Published private(set) var speakerOn = false
+    /// The phone reported the call's sound route, so it can steer this call (any app's).
+    private var phoneControlsCallAudio = false
     @Published private(set) var media: MediaInfo?
     @Published private(set) var apps: [PhoneApp] = []
     @Published private(set) var appIcons: [String: NSImage] = [:]
@@ -455,6 +459,9 @@ final class AppState: ObservableObject {
             if let id = selectedThread { requestMessages(thread: id) }
         case "call":
             receivedCall(m)
+        case "callSpeaker":
+            speakerOn = m.on ?? false
+            phoneControlsCallAudio = true
         case "media":
             withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
                 if let title = m.title, !title.isEmpty {
@@ -510,6 +517,7 @@ final class AppState: ObservableObject {
         if state == "idle" {
             pendingCallerName = nil
             if hiddenCallPanelID == "telephony" { hiddenCallPanelID = nil }
+            speakerOn = false
             withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { call = nil }
             resetCallPanelIfNoCall()
             return
@@ -569,9 +577,15 @@ final class AppState: ObservableObject {
         }
         if let n = notifications.first(where: { $0.isCall && !isMuted($0.pkg) }) {
             guard n.key != hiddenCallPanelID else { return nil }
-            let buttons = n.actions.enumerated().filter { !$0.element.isEmpty }.map { i, title in
+            var buttons = n.actions.enumerated().filter { !$0.element.isEmpty }.map { i, title in
                 CallPanelModel.Button(title: title, kind: CallPanelModel.kind(for: title),
                                       action: .notification(key: n.key, index: i))
+            }
+            // A regular phone call in progress (the dialer's notification): the phone's speaker
+            // too, unless the dialer already offers it.
+            if call?.state == "offhook" || phoneControlsCallAudio, !n.incomingCall,
+               !buttons.contains(where: { $0.title.localizedCaseInsensitiveContains("speaker") }) {
+                buttons.insert(speakerButton, at: 0)
             }
             return CallPanelModel(id: n.key, caller: n.title.isEmpty ? n.app : n.title, detail: n.text,
                                   app: n.app, icon: n.icon, incoming: n.incomingCall, buttons: buttons)
@@ -581,13 +595,20 @@ final class AppState: ObservableObject {
             let buttons: [CallPanelModel.Button] = ringing
                 ? [.init(title: "Decline", kind: .reject, action: .telephony("decline")),
                    .init(title: "Answer", kind: .accept, action: .telephony("answer"))]
-                : [.init(title: "Mute", kind: .neutral, action: .telephony("mute")),
+                : [speakerButton,
+                   .init(title: "Mute", kind: .neutral, action: .telephony("mute")),
                    .init(title: "End", kind: .reject, action: .telephony("end"))]
             return CallPanelModel(id: "telephony", caller: call.display,
                                   detail: ringing ? "Incoming call" : "Audio is on your phone",
                                   app: "Phone", icon: nil, incoming: ringing, buttons: buttons)
         }
         return nil
+    }
+
+    /// Puts the phone's call sound on its loudspeaker (or back to the earpiece), so a call
+    /// answered from the Mac can be heard without picking the phone up.
+    private var speakerButton: CallPanelModel.Button {
+        .init(title: speakerOn ? "Speaker off" : "Speaker", kind: .neutral, action: .telephony("speaker"))
     }
 
     /// A call known only from the Bluetooth link (the Wi-Fi/USB link may be down).
@@ -608,7 +629,7 @@ final class AppState: ObservableObject {
                            B(title: "Answer", kind: .accept, action: .bluetooth("answerOnPhone"))]
                 detail = "Incoming call · you'll talk on your phone"
             } else {
-                buttons = [B(title: "End", kind: .reject, action: .bluetooth("end"))]
+                buttons = [speakerButton, B(title: "End", kind: .reject, action: .bluetooth("end"))]
                 detail = "Audio is on your phone (macOS doesn't let apps take call audio)"
             }
         } else if call.state == "ringing" {
@@ -622,7 +643,8 @@ final class AppState: ObservableObject {
                        B(title: "End", kind: .reject, action: .bluetooth("end"))]
             detail = "Talking on this Mac"
         } else {
-            buttons = [B(title: "Move to Mac", kind: .neutral, action: .bluetooth("moveToMac")),
+            buttons = [speakerButton,
+                       B(title: "Move to Mac", kind: .neutral, action: .bluetooth("moveToMac")),
                        B(title: "End", kind: .reject, action: .bluetooth("end"))]
             detail = "Audio is on your phone"
         }
@@ -632,6 +654,7 @@ final class AppState: ObservableObject {
 
     func performCallButton(_ button: CallPanelModel.Button) {
         callLog.notice("call button: \(button.title, privacy: .public)")
+        if button.kind == .reject, let id = callPanel?.id { closePanelForEndedCall(id) }
         switch button.action {
         case .notification(let key, let index): runAction(key, index: index)
         case .telephony(let action): callAction(action)
@@ -696,9 +719,30 @@ final class AppState: ObservableObject {
         callPanelDismissed = true
     }
 
+    /// Ending a call can take the calling app several seconds to confirm (WhatsApp takes 5), so
+    /// the panel goes as soon as End/Decline is clicked. If the call is somehow still going a
+    /// while later, it comes back.
+    private func closePanelForEndedCall(_ id: String) {
+        hiddenCallPanelID = id
+        callPanelDismissed = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.callPanelDismissed, self.hiddenCallPanelID == id else { return }
+                let stillOn = self.call != nil || self.bluetooth.ringing || self.bluetooth.callActive
+                    || self.notifications.contains(where: { $0.isCall && $0.key == id })
+                if stillOn {
+                    callLog.notice("call still going after End; showing the panel again")
+                    self.hiddenCallPanelID = nil
+                    self.callPanelDismissed = false
+                }
+            }
+        }
+    }
+
     /// Lets the panel show again once no call is ringing or in progress.
     private func resetCallPanelIfNoCall() {
         let anyCall = call != nil || bluetooth.ringing || bluetooth.callActive || notifications.contains(where: \.isCall)
+        if !anyCall { phoneControlsCallAudio = false }
         if !anyCall && callPanelDismissed { callPanelDismissed = false }
     }
 

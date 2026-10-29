@@ -52,6 +52,8 @@ struct Msg: Codable {
     var action: String?
     var artist: String?
     var playing: Bool?
+    /// callSpeaker: whether the call's sound is on the phone's loudspeaker.
+    var on: Bool?
     var art: String?
 
     // App control
