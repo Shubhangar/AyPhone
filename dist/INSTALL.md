@@ -6,12 +6,12 @@ You need both apps:
 
 | File | For |
 |---|---|
-| `AyPhone-0.1.1-mac.dmg` | Mac, macOS 14 Sonoma or later (Apple silicon or Intel) |
-| `AyPhone-0.1.1-android.apk` | Android 10 or later |
+| `AyPhone-0.1.2-mac.dmg` | Mac, macOS 14 Sonoma or later (Apple silicon or Intel) |
+| `AyPhone-0.1.2-android.apk` | Android 10 or later |
 
 ## 1. Mac
 
-1. Open `AyPhone-0.1.1-mac.dmg` and drag **AyPhone** onto **Applications**.
+1. Open `AyPhone-0.1.2-mac.dmg` and drag **AyPhone** onto **Applications**.
 2. Open AyPhone from Applications. The first time, macOS says it can't verify the developer, because AyPhone isn't notarized by Apple yet:
    - Click **Done** (or **OK**).
    - Open **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to AyPhone. Confirm with your password or Touch ID.
@@ -72,11 +72,11 @@ Some versions of macOS don't let apps take phone-call audio. On those Macs, AyPh
 
 ## Checking the downloads
 
-SHA-256 checksums for version 0.1.1:
+SHA-256 checksums for version 0.1.2:
 
 ```
-2a54682866c8e47c3c00342049fa88ee5df37dc25c80257c9e3946306c1fea7b  AyPhone-0.1.1-mac.dmg
-b6aa8223080c1f92b1ef72db958b769a84822f0fa0df17454027fc0277de9670  AyPhone-0.1.1-android.apk
+dab2b31e3e74ba4762d50d58753168578fbb9c92c599aa91108dcc0a434136cc  AyPhone-0.1.2-mac.dmg
+822134a0f2c34ad9d97e2a8d499b4cdec2eae39d6e2bb73e8a7dc8d848fa9318  AyPhone-0.1.2-android.apk
 ```
 
 On a Mac: `shasum -a 256 <file>`.
