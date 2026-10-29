@@ -33,7 +33,7 @@ final class Bridge: NSObject, IOBluetoothRFCOMMChannelDelegate {
                 // RFCOMM, clear of the system's channels (10 is hands-free). A different one each
                 // launch, since macOS can hold on to a quit copy's channel for a while; the phone
                 // finds it by service ID.
-                [Data([0x00, 0x03]), ["DataElementType": 1, "DataElementSize": 1, "DataElementValue": Int.random(in: 14...30)]],
+                [Data([0x00, 0x03]), ["DataElementType": 1, "DataElementSize": 1, "DataElementValue": freshChannel()]],
             ],
             "0005 - BrowseGroupList*": [Data([0x10, 0x02])], // public browse group
             "0100 - ServiceName*": "AyPhone",
@@ -52,6 +52,17 @@ final class Bridge: NSObject, IOBluetoothRFCOMMChannelDelegate {
             forChannelOpenNotifications: self, selector: #selector(channelOpened(_:channel:)),
             withChannelID: channelID, direction: kIOBluetoothUserNotificationChannelDirectionIncoming)
         log.notice("AyPhone Bluetooth service ready on RFCOMM channel \(channelID, privacy: .public)")
+    }
+
+    /// A channel none of the last few launches used: macOS can keep refusing a quit copy's
+    /// channel (the phone finds the service, then gets turned away), so picking it again by
+    /// chance leaves the phone unable to connect.
+    private func freshChannel() -> Int {
+        let key = "bluetoothRecentChannels"
+        let recent = UserDefaults.standard.array(forKey: key) as? [Int] ?? []
+        let channel = Array(Set(14...30).subtracting(recent)).randomElement() ?? Int.random(in: 14...30)
+        UserDefaults.standard.set(Array(([channel] + recent).prefix(5)), forKey: key)
+        return channel
     }
 
     func stop() {
