@@ -11,6 +11,8 @@ import com.droidlink.app.feature.Contacts
 import com.droidlink.app.feature.ClipboardBridge
 import com.droidlink.app.feature.FileReceiver
 import com.droidlink.app.feature.FindPhone
+import com.droidlink.app.feature.MacControl
+import com.droidlink.app.feature.Photos
 import com.droidlink.app.feature.Media
 import com.droidlink.app.feature.PhoneScreen
 import com.droidlink.app.feature.Sms
@@ -40,6 +42,7 @@ object Router {
             "ping" -> Link.send(msg("pong"))
             "clipboard" -> main.post { ClipboardBridge.setFromMac(ctx, m.optString("text")) }
             "clipboardRequest" -> main.post { ClipboardBridge.sendOnRequest(ctx) }
+            "clipboardImage" -> main.post { ClipboardBridge.setImageFromMac(ctx, m.optString("data"), m.optString("mime", "image/png")) }
             "url" -> Notifications.showLink(ctx, m.optString("url"))
             "notificationReply" -> listener?.reply(m.optString("key"), m.optString("text"))
             "notificationDismiss" -> listener?.dismiss(m.optString("key"))
@@ -68,6 +71,11 @@ object Router {
             "getContacts" -> Link.scope.launch { Link.send(Contacts.listMessage(ctx)) }
             "getApps" -> Link.scope.launch { Link.send(Apps.listMessage(ctx)) }
             "launchApp" -> main.post { Apps.launch(ctx, m.optString("pkg")) }
+            "dial" -> main.post { Calls.dial(ctx, m.optString("number")) }
+            "listPhotos" -> Link.scope.launch { Link.send(Photos.listMessage(ctx)) }
+            "getPhoto" -> Photos.send(ctx, m.optString("id"))
+            "screenshotSync" -> Photos.setScreenshotSync(ctx, m.optBoolean("on"))
+            "findMac" -> if (m.optString("action") == "stopped") MacControl.finding.value = false
         }
     }
 }

@@ -29,6 +29,11 @@
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
     <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
+    <!-- Calls placed from the Mac -->
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <!-- Recent photos and screenshots on the Mac -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <!-- Switching a call to the loudspeaker from the Mac. -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <!-- Call controls from the Mac: the Mac is approved as a companion device (see CallCompanion). -->
@@ -106,6 +111,10 @@
         </activity>
 
         <!-- Shows Android's "Start sharing?" prompt for standard mirroring. -->
+        <activity
+            android:name=".ui.TrackpadActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
         <activity
             android:name=".ui.MirrorActivity"
             android:exported="false"
@@ -185,5 +194,27 @@
                 <action android:name="android.intent.action.PHONE_STATE" />
             </intent-filter>
         </receiver>
+        <receiver
+            android:name=".ui.MacWidget"
+            android:exported="false"
+            android:label="AyPhone">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/mac_widget_info" />
+        </receiver>
+
+        <!-- Images from the Mac's clipboard, readable by whichever app they're pasted into -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 </manifest>

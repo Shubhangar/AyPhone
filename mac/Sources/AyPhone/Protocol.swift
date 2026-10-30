@@ -37,6 +37,8 @@ struct Msg: Codable {
     var url: String?
     var size: Int64?
     var mime: String?
+    /// fileOffer: sent from the Files option, so the other side plays the transfer glow.
+    var glow: Bool?
     var seq: Int?
     var data: String?
 
@@ -63,6 +65,7 @@ struct Msg: Codable {
 
     // App control
     var apps: [PhoneApp]?
+    var photos: [PhonePhoto]?
 
     // Contacts
     var contacts: [PhoneContact]?
@@ -85,6 +88,15 @@ struct Msg: Codable {
 struct PhoneContact: Codable, Hashable {
     var name: String
     var numbers: [String]
+}
+
+/// A photo on the phone, with a small JPEG thumbnail (base64).
+struct PhonePhoto: Codable, Identifiable, Hashable {
+    var id: String
+    var name: String
+    var date: Double
+    var thumb: String
+    var screenshot: Bool?
 }
 
 struct PhoneApp: Codable, Identifiable, Hashable {

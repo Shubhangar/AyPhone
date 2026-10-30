@@ -28,12 +28,17 @@ Then follow the **[installation guide](dist/INSTALL.md)**: drag the Mac app to A
 | Works on locked-down Wi-Fi | Finds the Mac without Bonjour (broadcast beacon, remembered addresses, a network search); on Wi-Fi that isolates devices, notifications, messages, calls and clipboard carry on over Bluetooth (mirroring and app windows need Wi-Fi or USB) |
 | Contacts | Names and numbers sync to the Mac on every connect |
 | Files | Drop on the window or Dock icon, Finder right-click → Send to Phone, phone share sheet; drag received files out to Finder |
-| Clipboard | Mac→phone automatic; phone→Mac with ⌃⌥V on the Mac (Paste from phone, no accessibility service needed), or tile/notification/share; fully automatic with the optional accessibility service or a one-time USB setup |
+| Clipboard | Text and images; Mac→phone automatic; phone→Mac with ⌃⌥V on the Mac (Paste from phone, no accessibility service needed), or tile/notification/share; fully automatic with the optional accessibility service or a one-time USB setup |
 | Screen mirroring | Standard (no debugging): Android screen capture → hardware H.264 → Mac window, with app sound; optional click/swipe/type control through an accessibility service. Android asks to allow sharing each time |
 | Advanced features (off by default) | With USB debugging: scrcpy apps in Mac windows, phone camera, advanced mirroring (also over Wi-Fi after plugging in once), USB link, automatic clipboard. While off, the Mac app never runs adb |
 | App control | Grid of the phone's apps; open on the phone, or in a Mac window |
 | Media remote | Now playing with album art, play/pause/skip, volume |
-| Battery, Find my phone, open links on the other device | ✅ |
+| Verification codes | One-time codes in texts and notifications are copied to the Mac's clipboard as they arrive (Notifications → switch off if you prefer) |
+| Call from the Mac | The call button in a conversation has the phone dial; talk on the phone, or on the Mac with Bluetooth calls |
+| Photos | The phone's latest photos on the Mac (click to bring one over); new screenshots arrive automatically |
+| Phone as a remote | Lock the Mac, make it ring (Find my Mac), control its music and volume, or use the phone as its trackpad and keyboard |
+| Battery, Find my phone, open links on the other device | ✅ Battery warnings both ways (low, fully charged); the Mac's battery shows on the phone and its widget |
+| Android widget | The Mac's battery and connection, with Clipboard and Files buttons, on the home screen |
 | Connection | One-time QR pairing, AES-256-GCM, Bonjour discovery, USB forwarding turns on automatically when you plug in |
 
 The wire protocol is documented in [PROTOCOL.md](PROTOCOL.md).

@@ -75,7 +75,7 @@ struct FilesView: View {
             for p in providers {
                 _ = p.loadObject(ofClass: URL.self) { url, _ in
                     guard let url else { return }
-                    Task { @MainActor in state.sendFiles([url]) }
+                    Task { @MainActor in state.sendFiles([url], glow: true) }
                 }
             }
             return true
@@ -86,7 +86,7 @@ struct FilesView: View {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
-        if panel.runModal() == .OK { state.sendFiles(panel.urls) }
+        if panel.runModal() == .OK { state.sendFiles(panel.urls, glow: true) }
     }
 }
 

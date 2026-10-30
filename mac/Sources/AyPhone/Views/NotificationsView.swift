@@ -60,6 +60,9 @@ struct NotificationControls: View {
                 Toggle(isOn: $state.showCallsOnMac) {
                     Label("Show calls on this Mac", systemImage: "phone")
                 }
+                Toggle(isOn: $state.copyCodes) {
+                    Label("Copy verification codes to the clipboard", systemImage: "key")
+                }
                 Toggle(isOn: $state.muteAppsOnThisMac) {
                     VStack(alignment: .leading, spacing: 2) {
                         Label("Skip apps that are also on this Mac", systemImage: "macbook.and.iphone")

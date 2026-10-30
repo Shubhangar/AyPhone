@@ -11,6 +11,7 @@ import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.droidlink.app.Notifications
 import com.droidlink.app.feature.FileReceiver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -70,7 +71,15 @@ object Link {
 
     val state = MutableStateFlow(State.Disconnected)
     val macName = MutableStateFlow<String?>(null)
+    /** "MacBook Pro", "Mac mini"… as the Mac reports it. */
+    val macModel = MutableStateFlow<String?>(null)
+    /** The Mac's battery; null on Macs without one (or older Mac apps). */
+    val macBattery = MutableStateFlow<MacBattery?>(null)
     val transport = MutableStateFlow<String?>(null)
+
+    data class MacBattery(val level: Int, val charging: Boolean)
+    /** Whether the Mac's sound is muted (its Quick toggle); null until the Mac says. */
+    val macMuted = MutableStateFlow<Boolean?>(null)
 
     /** Hosts that accepted a connection but failed the pairing handshake (another computer), with when. */
     private val rejected = HashMap<String, Long>()
@@ -116,6 +125,8 @@ object Link {
         loop = null
         closeSocket()
         macName.value = null
+        macModel.value = null
+        macBattery.value = null
         state.value = if (Pairing.load(context) == null) State.Unpaired else State.Disconnected
     }
 
@@ -179,6 +190,8 @@ object Link {
                 closeSocket()
                 FileReceiver.abortAll(context)
                 macName.value = null
+                macModel.value = null
+                macBattery.value = null
                 transport.value = null
                 if (currentCoroutineContext().isActive) state.value = State.Connecting
                 if (authenticated) backoff = 1_000L
@@ -358,9 +371,27 @@ object Link {
                 val json = JSONObject(String(c.open(box), Charsets.UTF_8))
                 if (json.optString("type") == "helloOk") {
                     macName.value = json.optString("name", p.macName)
+                    macModel.value = json.optString("model").ifEmpty { null }
                     state.value = State.Connected
                     onAuthenticated()
                     Router.onConnected()
+                    continue
+                }
+                if (json.optString("type") == "macMuted") {
+                    macMuted.value = json.optBoolean("on")
+                    continue
+                }
+                if (json.optString("type") == "macBattery") {
+                    val before = macBattery.value
+                    val now = MacBattery(json.optInt("level"), json.optBoolean("charging"))
+                    macBattery.value = now
+                    // "Mac battery low" once at 10% unplugged, "fully charged" once at 100% on power.
+                    val name = macName.value ?: "Your Mac"
+                    if (before != null && !now.charging && now.level <= 10 && before.level > 10) {
+                        Notifications.alert(context, "$name battery low", "${now.level}% left. Plug it in soon.")
+                    } else if (before != null && now.charging && now.level >= 100 && before.level < 100) {
+                        Notifications.alert(context, "$name fully charged", "You can unplug it.")
+                    }
                     continue
                 }
                 try {

@@ -10,6 +10,8 @@ class AyPhoneApp : Application() {
         super.onCreate()
         Notifications.createChannels(this)
         Link.init(this)
+        com.droidlink.app.feature.ActivityLog.init(this)
+        com.droidlink.app.feature.NotificationPause.init(this)
         if (Pairing.load(this) != null) LinkService.start(this)
     }
 }

@@ -67,7 +67,8 @@ final class CallPanelController {
     private func hide() {
         guard let panel, panel.isVisible else { return }
         NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.25
+            ctx.duration = 0.32
+            ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.4, 0, 0.6, 1)
             panel.animator().alphaValue = 0
             panel.animator().setFrame(panel.frame.offsetBy(dx: 40, dy: 0), display: true)
         }, completionHandler: {
@@ -127,17 +128,24 @@ private let panelLog = Logger(subsystem: "com.ayphone.mac", category: "bluetooth
 
 struct CallPanelView: View {
     @EnvironmentObject private var state: AppState
+    /// The last card shown, kept while the window fades out after the call ends so the card
+    /// leaves with it instead of vanishing first.
+    @ViewState private var lastModel: CallPanelModel?
 
     var body: some View {
         Group {
-            if let model = state.callPanel {
+            if let model = state.callPanel ?? lastModel {
                 card(model)
                     .id(model.id)
-                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                    .transition(.asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.94, anchor: .top)),
+                                            removal: .opacity.combined(with: .scale(scale: 0.97))))
             }
         }
         .padding(16) // room for the shadow inside the transparent window
         .animation(Theme.spring, value: state.callPanel?.buttons)
+        .animation(Theme.spring, value: state.callPanel?.incoming)
+        .onAppear { lastModel = state.callPanel }
+        .onChange(of: state.callPanel) { _, model in if let model { lastModel = model } }
     }
 
     private func card(_ m: CallPanelModel) -> some View {
@@ -147,6 +155,12 @@ struct CallPanelView: View {
                     if m.incoming { PulseRings(active: true, color: Theme.avatarRing) }
                     Circle().strokeBorder(Theme.avatarRing.opacity(0.5), lineWidth: 1.5)
                     Avatar(name: m.caller, size: 46)
+                        .keyframeAnimator(initialValue: CGFloat(1), trigger: m.incoming) { view, scale in
+                            view.scaleEffect(scale)
+                        } keyframes: { _ in
+                            SpringKeyframe(1.12, duration: 0.18)
+                            SpringKeyframe(1, duration: 0.4)
+                        }
                     if let icon = m.icon {
                         Image(nsImage: icon)
                             .resizable()
@@ -162,6 +176,7 @@ struct CallPanelView: View {
                     Text("\(m.app) · \(m.incoming ? "Incoming call" : "On a call")")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(Theme.callLabel)
+                        .contentTransition(.opacity)
                     Text(m.caller).font(.title3.weight(.semibold)).lineLimit(1)
                     if !m.detail.isEmpty, m.detail != m.caller {
                         Text(m.detail).font(.callout).foregroundStyle(.secondary).lineLimit(1)
@@ -182,15 +197,18 @@ struct CallPanelView: View {
                 HStack(spacing: 8) {
                     // Answer first and End/Decline last, whatever order the call's app uses.
                     ForEach(Array(m.buttons.enumerated()).sorted { $0.element.kind.order < $1.element.kind.order || ($0.element.kind.order == $1.element.kind.order && $0.offset < $1.offset) },
-                            id: \.offset) { _, button in
-                        CallActionButton(button: button) { state.performCallButton(button) }
+                            id: \.element.action) { _, button in
+                        CallActionButton(button: button, ringing: m.incoming) { state.performCallButton(button) }
+                            .transition(.scale(scale: 0.85).combined(with: .opacity))
                     }
                 }
             }
         }
         .padding(16)
         .frame(width: 370)
-        .background(VisualEffect().clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous)))
+        .background(VisualEffect())
+        // The rings grow past the panel's edge but stay inside it.
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
         )
@@ -200,7 +218,11 @@ struct CallPanelView: View {
 
 struct CallActionButton: View {
     let button: CallPanelModel.Button
+    /// The call is ringing: Answer breathes and its phone wiggles.
+    var ringing = false
     let action: () -> Void
+    @ViewState private var taps = 0
+    @ViewState private var hovers = 0
 
     private var symbol: String? {
         let title = button.title.lowercased()
@@ -217,11 +239,29 @@ struct CallActionButton: View {
         }
     }
 
+    private var glow: Color {
+        switch button.kind {
+        case .accept: Theme.answerColors[0]
+        case .reject: Theme.declineColors[1]
+        case .neutral: .white
+        }
+    }
+
     var body: some View {
-        Button(action: action) {
+        Button {
+            taps += 1
+            Haptics.tap()
+            action()
+        } label: {
             HStack(spacing: 6) {
-                if let symbol { Image(systemName: symbol) }
-                Text(button.title).lineLimit(1)
+                if let symbol {
+                    Image(systemName: symbol)
+                        .contentTransition(.symbolEffect(.replace))
+                        .ringingWiggle(ringing && button.kind == .accept)
+                        .symbolEffect(.bounce, value: hovers)
+                        .modifier(TapMotion(kind: button.kind, trigger: taps))
+                }
+                Text(button.title).lineLimit(1).contentTransition(.interpolate)
             }
             .font(.callout.weight(.semibold))
             .foregroundStyle(.white)
@@ -234,8 +274,50 @@ struct CallActionButton: View {
                 case .neutral: Capsule().fill(Theme.glassFill).overlay(Capsule().strokeBorder(Theme.glassEdge))
                 }
             }
+            .ripple(Capsule(), color: glow, trigger: taps)
+            .breathingGlow(glow, active: ringing && button.kind == .accept)
         }
         .buttonStyle(.pressable(1.04))
+        .onHover { if $0 { hovers += 1 } }
+        .animation(Theme.spring, value: button.title)
+    }
+}
+
+/// What the icon does when its button is clicked: the receiver lifts for Answer, tips down
+/// to hang up for End/Decline, and gives a small nod for the rest.
+private struct TapMotion: ViewModifier {
+    let kind: CallPanelModel.Kind
+    let trigger: Int
+
+    private struct Value { var angle = 0.0; var lift: CGFloat = 0; var scale: CGFloat = 1 }
+
+    private var motion: (angles: (Double, Double), lift: CGFloat, scale: CGFloat) {
+        switch kind {
+        case .accept: ((-28, 10), -3, 1)
+        case .reject: ((22, 22), 4, 1)
+        case .neutral: ((0, 0), 0, 1.25)
+        }
+    }
+
+    func body(content: Content) -> some View {
+        content.keyframeAnimator(initialValue: Value(), trigger: trigger) { view, v in
+            view.rotationEffect(.degrees(v.angle)).offset(y: v.lift).scaleEffect(v.scale)
+        } keyframes: { _ in
+            KeyframeTrack(\.angle) {
+                SpringKeyframe(motion.angles.0, duration: 0.16)
+                SpringKeyframe(motion.angles.1, duration: 0.14)
+                SpringKeyframe(0, duration: 0.35)
+            }
+            KeyframeTrack(\.lift) {
+                SpringKeyframe(motion.lift, duration: 0.16)
+                SpringKeyframe(kind == .reject ? motion.lift : 0, duration: 0.14)
+                SpringKeyframe(0, duration: 0.35)
+            }
+            KeyframeTrack(\.scale) {
+                SpringKeyframe(motion.scale, duration: 0.15)
+                SpringKeyframe(1, duration: 0.35)
+            }
+        }
     }
 }
 

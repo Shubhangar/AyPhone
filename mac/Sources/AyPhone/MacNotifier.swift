@@ -120,6 +120,14 @@ final class MacNotifier: NSObject, UNUserNotificationCenterDelegate {
         center?.removeAllDeliveredNotifications()
     }
 
+    /// A plain alert from AyPhone itself (battery warnings…).
+    func alert(title: String, body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        center?.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+    }
+
     func fileReceived(_ url: URL) {
         let content = UNMutableNotificationContent()
         content.title = "File received"

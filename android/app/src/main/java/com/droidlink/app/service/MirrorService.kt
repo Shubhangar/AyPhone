@@ -53,6 +53,8 @@ class MirrorService : Service() {
 
         @Volatile var instance: MirrorService? = null
             private set
+        /** Whether the screen is being shared with the Mac (the home screen's Screen share toggle). */
+        val active = kotlinx.coroutines.flow.MutableStateFlow(false)
 
         fun stop(ctx: Context) {
             ctx.stopService(Intent(ctx, MirrorService::class.java))
@@ -105,6 +107,7 @@ class MirrorService : Service() {
         projection = mp
         running = true
         instance = this
+        active.value = true
         try {
             startVideo()
         } catch (e: Exception) {
@@ -251,6 +254,7 @@ class MirrorService : Service() {
     override fun onDestroy() {
         running = false
         instance = null
+        active.value = false
         getSystemService(DisplayManager::class.java).unregisterDisplayListener(displayListener)
         audioRecord?.let {
             try { it.stop() } catch (_: Exception) {}

@@ -50,7 +50,7 @@ struct CallPanelModel: Equatable {
         /// Panel order: answer first, end/decline last.
         var order: Int { self == .accept ? 0 : self == .neutral ? 1 : 2 }
     }
-    enum Action: Equatable {
+    enum Action: Hashable {
         case notification(key: String, index: Int)
         case telephony(String)
         /// Bluetooth hands-free: answerOnMac, moveToMac, moveToPhone, mute, end.
@@ -111,6 +111,8 @@ final class AppState: ObservableObject {
     @Published private(set) var call: CallInfo?
     /// Whether the current call's sound is on the phone's loudspeaker (the phone reports it).
     @Published private(set) var speakerOn = false
+    /// Whether the phone's microphone is muted for the call (the phone reports it).
+    @Published private(set) var micMuted = false
     /// The phone reported the call's sound route, so it can steer this call (any app's).
     private var phoneControlsCallAudio = false
     @Published private(set) var media: MediaInfo?
@@ -139,6 +141,43 @@ final class AppState: ObservableObject {
     @Published private var hiddenCallPanelID: String?
     /// Set by the panel's ✕: hide the call panel, whichever kind, until this call is over.
     @Published private var callPanelDismissed = false
+    /// Copy one-time codes from phone notifications and texts to the Mac's clipboard.
+    @Published var copyCodes = UserDefaults.standard.object(forKey: "copyCodes") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(copyCodes, forKey: "copyCodes") }
+    }
+
+    /// The phone's latest photos (thumbnails), for the Photos page.
+    @Published private(set) var photos: [PhonePhoto] = []
+    @Published private(set) var photoThumbs: [String: NSImage] = [:]
+    /// Nil until the phone says; false when it can't read photos (permission).
+    @Published private(set) var photosAllowed: Bool?
+    /// Whether the phone sends each new screenshot here (its own setting).
+    @Published private(set) var screenshotSync = true
+    /// Photos asked for and not yet arrived.
+    @Published private(set) var fetchingPhotos: Set<String> = []
+
+    func requestPhotos() {
+        guard connected else { return }
+        server.send(Msg("listPhotos"))
+    }
+
+    func getPhoto(_ photo: PhonePhoto) {
+        guard connected, !fetchingPhotos.contains(photo.id) else { return }
+        fetchingPhotos.insert(photo.id)
+        var m = Msg("getPhoto"); m.id = photo.id
+        server.send(m)
+        // The photo arrives like any file; let the spinner go after a while regardless.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
+            MainActor.assumeIsolated { _ = self?.fetchingPhotos.remove(photo.id) }
+        }
+    }
+
+    func setScreenshotSync(_ on: Bool) {
+        screenshotSync = on
+        var m = Msg("screenshotSync"); m.on = on
+        server.send(m)
+    }
+
     @Published var clipboardSyncEnabled = UserDefaults.standard.object(forKey: "clipboardSync") as? Bool ?? true {
         didSet { UserDefaults.standard.set(clipboardSyncEnabled, forKey: "clipboardSync") }
     }
@@ -246,6 +285,7 @@ final class AppState: ObservableObject {
         pairingPayload = Pairing.qrPayload(key: server.key, port: LinkServer.port)
         server.onMessage = { [weak self] in self?.handle($0) }
         server.onConnectionChange = { [weak self] in self?.connectionChanged($0) }
+        macInfo.watch { [weak self] in self?.sendMacBattery() }
         server.start()
         // Helps the phone find the Mac on networks that block Bonjour.
         beacon.shouldSend = { [weak self] in !(self?.connected ?? true) }
@@ -253,9 +293,15 @@ final class AppState: ObservableObject {
 
         files.send = { [weak self] msg, done in self?.server.send(msg, completion: done) }
         mirror.send = { [weak self] in self?.server.send($0) }
-        files.onReceived = { [weak self] url in
-            self?.notifier.fileReceived(url)
-            self?.showToast("Received \(url.lastPathComponent)", symbol: "arrow.down.circle.fill")
+        files.onReceived = { [weak self] url, glow in
+            guard let self else { return }
+            self.notifier.fileReceived(url)
+            if glow { TransferGlow.show(.received) }
+            // A photo asked for on the Photos page has arrived (saved names may gain " (1)").
+            let stem = url.deletingPathExtension().lastPathComponent
+            for p in self.photos where self.fetchingPhotos.contains(p.id) && stem.hasPrefix((p.name as NSString).deletingPathExtension) {
+                self.fetchingPhotos.remove(p.id)
+            }
         }
 
         clipboard.onLocalChange = { [weak self] text in
@@ -265,6 +311,15 @@ final class AppState: ObservableObject {
                 return
             }
             var m = Msg("clipboard"); m.text = text
+            self.server.send(m)
+        }
+        clipboard.onLocalImage = { [weak self] data, mime in
+            guard let self else { return }
+            guard self.connected, self.clipboardSyncEnabled, !self.server.isBluetooth else {
+                self.unsyncedMacCopyAt = Date()
+                return
+            }
+            var m = Msg("clipboardImage"); m.data = data.base64EncodedString(); m.mime = mime
             self.server.send(m)
         }
         clipboard.onPrivateChange = { [weak self] in self?.unsyncedMacCopyAt = Date() }
@@ -376,6 +431,35 @@ final class AppState: ObservableObject {
         }
     }
 
+    private let macInfo = MacInfo()
+    private var lastMacBattery: (level: Int, charging: Bool)?
+
+    /// The Mac's battery, for the phone to show next to its name (only when it changed).
+    private func sendMacBattery(force: Bool = false) {
+        guard connected, let battery = MacInfo.battery else { return }
+        if let last = lastMacBattery, last == battery, !force { return }
+        lastMacBattery = battery
+        var m = Msg("macBattery"); m.level = battery.level; m.charging = battery.charging
+        server.send(m)
+    }
+
+    /// Tells the phone whether the Mac's sound is muted (its Quick toggle).
+    private func sendMacMuted() {
+        var m = Msg("macMuted"); m.on = MacInfo.outputMuted
+        server.send(m)
+    }
+
+    /// "Phone battery low" once it drops to 15% unplugged, and "fully charged" once it reaches
+    /// 100% on the charger (not on every update, and not right after connecting).
+    private func phoneBatteryAlerts(before: (level: Int?, charging: Bool)) {
+        guard let level = battery, let previous = before.level else { return }
+        if !charging, level <= 15, previous > 15 {
+            notifier.alert(title: "\(phoneName) battery low", body: "\(level)% left. Plug it in soon.")
+        } else if charging, level >= 100, previous < 100 {
+            notifier.alert(title: "\(phoneName) fully charged", body: "You can unplug it.")
+        }
+    }
+
     private func handle(_ m: Msg) {
         lastFrameAt = Date()
         switch m.type {
@@ -386,8 +470,10 @@ final class AppState: ObservableObject {
             mirror.phoneName = m.name ?? "Phone"
             transport = server.isBluetooth ? "Bluetooth" : (server.peerIsLocal ? "USB" : "Wi-Fi")
             if let host = server.peerHost { adb.phoneSeen(at: host) }
-            var ok = Msg("helloOk"); ok.name = Host.current().localizedName ?? "Mac"
+            var ok = Msg("helloOk"); ok.name = Host.current().localizedName ?? "Mac"; ok.model = MacInfo.modelName
             server.send(ok)
+            sendMacBattery(force: true)
+            sendMacMuted()
             server.send(Msg("getContacts"))
             requestThreads()
             // The app list (with icons) is heavy; it loads once Wi-Fi or USB is back.
@@ -397,10 +483,12 @@ final class AppState: ObservableObject {
         case "ping":
             server.send(Msg("pong"))
         case "battery":
+            let before = (level: battery, charging: charging)
             withAnimation(.smooth) {
                 battery = m.level
                 charging = m.charging ?? false
             }
+            phoneBatteryAlerts(before: before)
         case "notification":
             receivedNotification(m)
         case "notificationRemoved":
@@ -425,6 +513,20 @@ final class AppState: ObservableObject {
             } else {
                 showToast(requested ? "Phone clipboard copied · press ⌘V" : "Clipboard from phone", symbol: "doc.on.clipboard.fill")
             }
+        case "clipboardImage":
+            guard let data = m.data.flatMap({ Data(base64Encoded: $0) }) else { return }
+            let requested = clipboardRequestedAt.map { Date().timeIntervalSince($0) < 10 } ?? false
+            clipboardRequestedAt = nil
+            guard clipboardSyncEnabled || requested else { return }
+            clipboard.setImageFromPhone(data, onlyIfNew: pasteFetchDone != nil)
+            if let done = pasteFetchDone {
+                pasteFetchDone = nil
+                done()
+            } else if requested && AXIsProcessTrusted() {
+                PasteInterceptor.pressCommandV()
+            } else {
+                showToast(requested ? "Phone image copied · press ⌘V" : "Image from phone · ⌘V to paste", symbol: "photo.fill")
+            }
         case "clipboardUnavailable":
             clipboardRequestedAt = nil
             if let done = pasteFetchDone {
@@ -448,6 +550,44 @@ final class AppState: ObservableObject {
             }
         case "fileOffer", "fileChunk", "fileEnd":
             files.handle(m)
+        case "photos":
+            let list = m.photos ?? []
+            var thumbs: [String: NSImage] = [:]
+            for p in list { thumbs[p.id] = Data(base64Encoded: p.thumb).flatMap(NSImage.init(data:)) }
+            withAnimation(Theme.spring) {
+                photos = list
+                photoThumbs = thumbs
+                photosAllowed = m.action != "permission"
+                screenshotSync = m.on ?? true
+            }
+        case "dialFailed":
+            showToast("Allow Phone for AyPhone on your phone to call from here", symbol: "exclamationmark.triangle.fill")
+        case "macLock":
+            MacRemote.lock()
+        case "findMac":
+            MacRemote.find(m.action == "start") { [weak self] in
+                var stopped = Msg("findMac"); stopped.action = "stopped"
+                self?.server.send(stopped)
+            }
+        case "macMedia":
+            MacRemote.media(m.action ?? "")
+        case "pointer":
+            MacRemote.movePointer(dx: m.x ?? 0, dy: m.y ?? 0)
+        case "click":
+            MacRemote.click(m.action ?? "left")
+        case "scroll":
+            MacRemote.scroll(dx: m.x ?? 0, dy: m.y ?? 0)
+        case "type":
+            MacRemote.type(m.text ?? "")
+        case "key":
+            MacRemote.key(m.action ?? "")
+        case "macMute":
+            // The phone's Mute Mac toggle.
+            MacInfo.setOutputMuted(m.on ?? false)
+            sendMacMuted()
+        case "mirrorRequest":
+            // The phone's Screen share toggle: the same as Mirror screen here.
+            if m.on == true { mirrorScreen() } else { mirror.stop() }
         case "mirrorState", "mirrorConfig", "mirrorFrame", "mirrorAudio":
             mirror.handle(m)
         case "smsThreads":
@@ -476,6 +616,8 @@ final class AppState: ObservableObject {
             receivedCall(m)
         case "callSpeaker":
             speakerOn = m.on ?? false
+        case "callMute":
+            micMuted = m.on ?? false
             phoneControlsCallAudio = true
         case "media":
             withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
@@ -524,6 +666,11 @@ final class AppState: ObservableObject {
         // update; the phone flags real new messages (not refreshes or our own reply) with `alert`.
         if appNames[n.pkg] != n.app, !n.pkg.isEmpty { appNames[n.pkg] = n.app }
         let shouldAlert = m.alert ?? (!isUpdate && m.silent != true)
+        // A verification code: ready to paste on the Mac.
+        if copyCodes, shouldAlert, !isCall, let code = OneTimeCode.find(in: n.title + " " + n.text) {
+            clipboard.setFromPhone(code)
+            showToast("Code \(code) copied · ⌘V to paste", symbol: "key.fill")
+        }
         if mirrorNotifications && !isCall && shouldAlert && !isMuted(n.pkg) { notifier.show(n, replacing: isUpdate) }
     }
 
@@ -533,6 +680,7 @@ final class AppState: ObservableObject {
             pendingCallerName = nil
             if hiddenCallPanelID == "telephony" || hiddenCallPanelID == "waiting" { hiddenCallPanelID = nil }
             speakerOn = false
+            micMuted = false
             withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { call = nil }
             resetCallPanelIfNoCall()
             return
@@ -637,7 +785,7 @@ final class AppState: ObservableObject {
                 ? [.init(title: "Decline", kind: .reject, action: .telephony("decline")),
                    .init(title: "Answer", kind: .accept, action: .telephony("answer"))]
                 : [speakerButton,
-                   .init(title: "Mute", kind: .neutral, action: .telephony("mute")),
+                   .init(title: micMuted ? "Unmute" : "Mute", kind: .neutral, action: .telephony("mute")),
                    .init(title: "End", kind: .reject, action: .telephony("end"))]
             return CallPanelModel(id: "telephony", caller: call.display,
                                   detail: ringing ? "Incoming call" : "Audio is on your phone",
@@ -844,14 +992,17 @@ final class AppState: ObservableObject {
         showToast("Link sent to phone", symbol: "safari.fill")
     }
 
-    func sendFiles(_ urls: [URL]) {
+    /// `glow` for sends from the Files option (the Send files tile or the Files page), which
+    /// play the transfer glow here and on the phone.
+    func sendFiles(_ urls: [URL], glow: Bool = false) {
         let files = urls.filter { !$0.hasDirectoryPath }
         guard !files.isEmpty else { return }
         guard connected else {
             showToast("Phone not connected", symbol: "exclamationmark.triangle.fill")
             return
         }
-        for url in files { self.files.enqueue(url) }
+        for url in files { self.files.enqueue(url, glow: glow) }
+        if glow { TransferGlow.show(.sending) }
         showToast(files.count == 1 ? "Sending \(files[0].lastPathComponent)" : "Sending \(files.count) files",
                   symbol: "arrow.up.circle.fill")
     }
@@ -868,6 +1019,14 @@ final class AppState: ObservableObject {
     func sendSms(to address: String, text: String) {
         var m = Msg("smsSend"); m.address = address; m.text = text
         server.send(m)
+    }
+
+    /// Has the phone call a number (talk on the phone, or here with Calls through the Mac).
+    func dial(_ number: String, name: String? = nil) {
+        guard connected else { return }
+        var m = Msg("dial"); m.number = number
+        server.send(m)
+        showToast("Calling \(name ?? number) on your phone", symbol: "phone.arrow.up.right.fill")
     }
 
     func callAction(_ action: String) {

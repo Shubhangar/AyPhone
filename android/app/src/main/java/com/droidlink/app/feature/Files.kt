@@ -19,7 +19,8 @@ import java.util.UUID
 
 /** Files from the Mac land in Downloads/AyPhone. Called only from the socket reader thread. */
 object FileReceiver {
-    private class Incoming(val uri: Uri, val out: OutputStream, val name: String, val mime: String)
+    /** [glow]: the Mac sent it from its Files option, so the transfer glow plays here. */
+    private class Incoming(val uri: Uri, val out: OutputStream, val name: String, val mime: String, val glow: Boolean)
 
     private val incoming = HashMap<String, Incoming>()
 
@@ -38,7 +39,7 @@ object FileReceiver {
                 }
                 val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return
                 val out = resolver.openOutputStream(uri)?.buffered(256 * 1024) ?: return
-                incoming[id] = Incoming(uri, out, name, mime)
+                incoming[id] = Incoming(uri, out, name, mime, m.optBoolean("glow"))
             }
             "fileChunk" -> incoming[id]?.out?.write(Base64.decode(m.optString("data"), Base64.DEFAULT))
             "fileEnd" -> {
@@ -46,6 +47,8 @@ object FileReceiver {
                 f.out.close()
                 resolver.update(f.uri, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
                 Notifications.showFile(ctx, f.uri, f.name, f.mime)
+                ActivityLog.add("Received from Mac", f.name)
+                if (f.glow) com.droidlink.app.ui.TransferGlow.show(ctx, receiving = true)
             }
         }
     }
@@ -88,11 +91,15 @@ object FileSender {
         }
     }
 
-    fun send(files: List<Outgoing>) {
+    /** [glow] for sends from the Files option (the Files tile or widget), which play the transfer
+     *  glow here and on the Mac; photos and screenshots go quietly. */
+    fun send(files: List<Outgoing>, glow: Boolean = false) {
+        if (files.isEmpty()) return
+        if (glow) com.droidlink.app.ui.TransferGlow.show(Link.context, receiving = false)
         Link.scope.launch {
             for (f in files) {
                 try {
-                    f.input.use { sendOne(f, it) }
+                    f.input.use { sendOne(f, it, glow) }
                 } catch (e: Exception) {
                     Log.w("AyPhone", "sending ${f.name} failed: $e")
                 }
@@ -100,9 +107,9 @@ object FileSender {
         }
     }
 
-    private fun sendOne(f: Outgoing, input: InputStream) {
+    private fun sendOne(f: Outgoing, input: InputStream, glow: Boolean) {
         val id = UUID.randomUUID().toString()
-        Link.sendNow(msg("fileOffer").put("id", id).put("name", f.name).put("size", f.size).put("mime", f.mime))
+        Link.sendNow(msg("fileOffer").put("id", id).put("name", f.name).put("size", f.size).put("mime", f.mime).put("glow", glow))
         val buf = ByteArray(CHUNK)
         var seq = 0
         while (true) {
@@ -121,5 +128,6 @@ object FileSender {
             if (n < CHUNK) break
         }
         Link.sendNow(msg("fileEnd").put("id", id))
+        ActivityLog.add("Sent to Mac", f.name)
     }
 }

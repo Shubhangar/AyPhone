@@ -21,6 +21,8 @@ import com.droidlink.app.Notifications
 import com.droidlink.app.feature.Battery
 import com.droidlink.app.feature.ClipboardWatcher
 import com.droidlink.app.feature.PhoneScreen
+import com.droidlink.app.feature.Photos
+import com.droidlink.app.ui.MacWidget
 import com.droidlink.app.link.Discovery
 import com.droidlink.app.link.Link
 import com.droidlink.app.link.msg
@@ -84,6 +86,11 @@ class LinkService : Service() {
         })
         getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(networkCallback)
         discovery = Discovery(this)
+        // Keep the home-screen widget current.
+        scope.launch {
+            combine(Link.state, Link.macName, Link.transport, Link.macBattery) { _, _, _, _ -> }
+                .collect { MacWidget.update(this@LinkService) }
+        }
         scope.launch {
             combine(Link.state, Link.macName, Link.transport) { s, n, t -> Triple(s, n, t) }
                 .collect { (state, name, transport) ->
@@ -98,6 +105,7 @@ class LinkService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // Permissions may have been granted since the service started.
         registerSmsObserverIfAllowed()
+        Photos.watch(this)
         ClipboardWatcher.start(this)
         Link.start()
         return START_STICKY
@@ -120,6 +128,7 @@ class LinkService : Service() {
         unregisterReceiver(PhoneScreen.receiver)
         getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(networkCallback)
         ClipboardWatcher.stop(this)
+        Photos.stop(this)
         if (smsObserverRegistered) contentResolver.unregisterContentObserver(smsObserver)
         handler.removeCallbacksAndMessages(null)
         discovery.stop()

@@ -14,7 +14,7 @@ struct MenuBarView: View {
                     Avatar(name: call.display, size: 30)
                     VStack(alignment: .leading, spacing: 0) {
                         Text(call.state == "ringing" ? "Incoming call" : "On a call")
-                            .font(.caption2.weight(.semibold)).foregroundStyle(Theme.green)
+                            .font(.caption2.weight(.semibold)).foregroundStyle(Theme.callLabel)
                         Text(call.display).font(.callout.weight(.medium)).lineLimit(1)
                     }
                     Spacer()
@@ -25,7 +25,7 @@ struct MenuBarView: View {
                         RoundButton(symbol: state.speakerOn ? "speaker.wave.3.fill" : "speaker.fill",
                                     colors: state.speakerOn ? Theme.accentColors : Theme.neutralColors, size: 30) { state.callAction("speaker") }
                                     .help(state.speakerOn ? "Speaker off" : "Phone speaker")
-                        RoundButton(symbol: "mic.slash.fill", colors: Theme.neutralColors, size: 30) { state.callAction("mute") }
+                        RoundButton(symbol: "mic.slash.fill", colors: state.micMuted ? Theme.accentColors : Theme.neutralColors, size: 30) { state.callAction("mute") }
                         RoundButton(symbol: "phone.down.fill", colors: Theme.declineColors, size: 30) { state.callAction("end") }
                     }
                 }
@@ -145,17 +145,39 @@ struct MenuBarView: View {
     }
 
     private func quick(_ symbol: String, _ title: String, enabled: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        QuickButton(symbol: symbol, title: title, action: action)
+            .disabled(!(enabled || state.connected))
+    }
+}
+
+/// A menu bar quick action: brightens under the pointer, and its icon bounces on hover and click.
+private struct QuickButton: View {
+    let symbol: String
+    let title: String
+    let action: () -> Void
+    @ViewState private var hovering = false
+    @ViewState private var bounces = 0
+
+    var body: some View {
+        Button {
+            bounces += 1
+            action()
+        } label: {
             VStack(spacing: 5) {
                 Image(systemName: symbol).font(.system(size: 15, weight: .semibold))
+                    .contentTransition(.symbolEffect(.replace))
+                    .symbolEffect(.bounce, value: bounces)
                 Text(title).font(.caption2)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 9)
-            .background(Theme.glassFill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .background(Color.white.opacity(hovering ? 0.14 : 0.09), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(.pressable)
-        .disabled(!(enabled || state.connected))
+        .onHover { inside in
+            withAnimation(.easeOut(duration: 0.15)) { hovering = inside }
+            if inside { bounces += 1 }
+        }
     }
 }
 

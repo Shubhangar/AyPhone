@@ -136,6 +136,7 @@ class PhoneNotificationListener : NotificationListenerService() {
         if (sbn.packageName == packageName) return false
         // Calls from any app (dialer, WhatsApp, Telegram…) are ongoing but are exactly what we want.
         if (isCall(sbn)) return true
+        if (com.droidlink.app.feature.NotificationPause.paused.value) return false
         // Other ongoing ones are media players, downloads, timers… handled elsewhere or just noise.
         if (sbn.isOngoing || !sbn.isClearable) return false
         if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return false

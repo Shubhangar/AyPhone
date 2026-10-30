@@ -125,6 +125,11 @@ struct ConversationView: View {
                     if thread.name != nil { Text(thread.address).font(.caption).foregroundStyle(.secondary) }
                 }
                 Spacer()
+                RoundButton(symbol: "phone.fill", colors: Theme.answerColors, size: 34) {
+                    state.dial(thread.address, name: thread.name)
+                }
+                .help("Call on your phone")
+                .disabled(!state.connected)
             }
             .padding(.horizontal, 20)
             .padding(.top, 28)

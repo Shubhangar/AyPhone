@@ -5,6 +5,7 @@ enum Section: String, CaseIterable, Identifiable {
     case notifications = "Notifications"
     case messages = "Messages"
     case files = "Files"
+    case photos = "Photos"
     case apps = "Apps"
     case pairing = "Pairing"
 
@@ -16,6 +17,7 @@ enum Section: String, CaseIterable, Identifiable {
         case .notifications: "bell.badge"
         case .messages: "message"
         case .files: "folder"
+        case .photos: "photo.on.rectangle"
         case .apps: "square.grid.2x2"
         case .pairing: "qrcode"
         }
@@ -42,6 +44,7 @@ struct ContentView: View {
                     case .notifications: NotificationsView()
                     case .messages: MessagesView()
                     case .files: FilesView()
+                    case .photos: PhotosView()
                     case .apps: AppsView()
                     case .pairing: PairingView()
                     }
@@ -71,6 +74,7 @@ struct ContentView: View {
             }
             .animation(Theme.spring, value: adb.message)
         }
+        .overlay { LaunchSplash() }
         .preferredColorScheme(.dark)
         .tint(Theme.cyan)
         .onAppear {
@@ -84,30 +88,18 @@ struct ContentView: View {
         }
     }
 
+    @Namespace private var selectionHighlight
+
     private var sidebar: some View {
         // Rows draw their own violet selection: macOS paints a List's selection in the system
         // accent colour, whatever the app's tint.
         List {
             ForEach(Section.allCases) { s in
-                let selected = (section ?? .overview) == s
-                Button { section = s } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: s.icon)
-                            .frame(width: 18)
-                            .foregroundStyle(selected ? Color.primary : Color.secondary)
-                        Text(s.rawValue)
-                        Spacer(minLength: 0)
-                        if s == .notifications, !state.notifications.isEmpty {
-                            Text("\(state.notifications.count)").font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .contentShape(Rectangle())
-                    .background(selected ? Theme.indigo.opacity(0.7) : .clear,
-                                in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                SidebarRow(section: s, selected: (section ?? .overview) == s,
+                           badge: s == .notifications ? state.notifications.count : 0,
+                           selection: selectionHighlight) {
+                    withAnimation(Theme.spring) { section = s }
                 }
-                .buttonStyle(.plain)
                 .listRowInsets(EdgeInsets(top: 1, leading: 0, bottom: 1, trailing: 0))
             }
         }
@@ -127,6 +119,55 @@ struct ContentView: View {
             .padding(.bottom, 4)
         }
         .safeAreaInset(edge: .bottom) { ConnectionPill().padding(12) }
+    }
+}
+
+/// A sidebar section: lights up under the pointer, its icon bounces on hover and when
+/// chosen, and the violet selection slides over from the previous row.
+private struct SidebarRow: View {
+    let section: Section
+    let selected: Bool
+    let badge: Int
+    let selection: Namespace.ID
+    let action: () -> Void
+    @ViewState private var hovering = false
+    @ViewState private var bounces = 0
+
+    var body: some View {
+        Button {
+            bounces += 1
+            action()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: section.icon)
+                    .frame(width: 18)
+                    .foregroundStyle(selected ? Color.primary : Color.secondary)
+                    .symbolEffect(.bounce, value: bounces)
+                Text(section.rawValue)
+                Spacer(minLength: 0)
+                if badge > 0 {
+                    Text("\(badge)").font(.caption).foregroundStyle(.secondary)
+                        .contentTransition(.numericText())
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .contentShape(Rectangle())
+            .background {
+                let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+                if selected {
+                    shape.fill(Theme.indigo.opacity(0.7)).matchedGeometryEffect(id: "selection", in: selection)
+                } else if hovering {
+                    shape.fill(Color.white.opacity(0.06))
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .onHover { inside in
+            withAnimation(.easeOut(duration: 0.15)) { hovering = inside }
+            if inside { bounces += 1 }
+        }
+        .animation(Theme.spring, value: badge)
     }
 }
 

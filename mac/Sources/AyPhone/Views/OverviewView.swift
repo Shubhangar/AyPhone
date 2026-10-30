@@ -37,17 +37,23 @@ struct OverviewView: View {
     // MARK: Hero
 
     private var hero: some View {
-        Glass(padding: 26, radius: 28) {
+        Glass(padding: 26, radius: 28, clipped: true) {
             HStack(spacing: 26) {
                 ZStack {
-                    PulseRings(active: state.connected)
+                    PulseRings(active: true, color: state.connected ? Theme.cyan : Theme.indigo)
                     Circle().fill(Theme.accent.opacity(0.14)).frame(width: 92, height: 92)
-                    Image(systemName: "iphone.gen3")
-                        .font(.system(size: 50, weight: .thin))
-                        .foregroundStyle(Theme.accent)
-                        .symbolEffect(.bounce, value: state.connected)
+                    if state.connected {
+                        Image(systemName: "iphone.gen3")
+                            .font(.system(size: 50, weight: .thin))
+                            .foregroundStyle(Theme.accent)
+                            .transition(.scale(scale: 0.5).combined(with: .opacity))
+                    } else {
+                        SearchingGlass()
+                            .transition(.scale(scale: 0.5).combined(with: .opacity))
+                    }
                 }
                 .frame(width: 112, height: 112)
+                .animation(.spring(response: 0.45, dampingFraction: 0.6), value: state.connected)
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text(state.connected ? state.phoneName : "Waiting for your phone")
@@ -101,7 +107,7 @@ struct OverviewView: View {
             let panel = NSOpenPanel()
             panel.allowsMultipleSelection = true
             panel.canChooseDirectories = false
-            if panel.runModal() == .OK { state.sendFiles(panel.urls) }
+            if panel.runModal() == .OK { state.sendFiles(panel.urls, glow: true) }
         }
         .disabled(!state.connected)
 
@@ -267,7 +273,7 @@ struct CallCard: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(call.state == "ringing" ? "Incoming call" : "On a call")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(Theme.green)
+                    .foregroundStyle(Theme.callLabel)
                     .textCase(.uppercase)
                 Text(call.display).font(.title2.weight(.semibold))
                 Text(call.hasWaiting ? "\(call.waitingDisplay) is calling"
@@ -291,7 +297,7 @@ struct CallCard: View {
                         RoundButton(symbol: state.speakerOn ? "speaker.wave.3.fill" : "speaker.fill",
                                     colors: state.speakerOn ? Theme.accentColors : Theme.neutralColors, size: 46) { state.callAction("speaker") }
                                     .help(state.speakerOn ? "Speaker off" : "Phone speaker")
-                        RoundButton(symbol: "mic.slash.fill", colors: Theme.neutralColors, size: 46) { state.callAction("mute") }
+                        RoundButton(symbol: "mic.slash.fill", colors: state.micMuted ? Theme.accentColors : Theme.neutralColors, size: 46) { state.callAction("mute") }
                         RoundButton(symbol: "phone.down.fill", colors: Theme.declineColors, size: 50) { state.callAction("end") }
                     }
                 }
@@ -365,9 +371,6 @@ struct MediaCard: View {
     }
 
     private func mediaButton(_ symbol: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 16, weight: .semibold)).frame(width: 28, height: 28)
-        }
-        .buttonStyle(.pressable(1.15))
+        BouncingIconButton(symbol: symbol, action: action)
     }
 }

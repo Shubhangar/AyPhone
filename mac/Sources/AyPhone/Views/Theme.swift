@@ -63,6 +63,65 @@ enum Theme {
     }
 }
 
+/// A light trackpad tap (on trackpads that have one) for actions that should feel physical.
+enum Haptics {
+    static func tap() {
+        NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+    }
+}
+
+/// A soft ring that expands from a control and fades, each time [trigger] changes.
+struct RippleEffect<S: Shape>: ViewModifier {
+    let shape: S
+    var color: Color = .white
+    let trigger: Int
+
+    private struct Value { var scale: CGFloat = 1; var opacity: Double = 0 }
+
+    func body(content: Content) -> some View {
+        content.keyframeAnimator(initialValue: Value(), trigger: trigger) { view, value in
+            view.overlay(shape.stroke(color, lineWidth: 2).scaleEffect(value.scale).opacity(value.opacity))
+        } keyframes: { _ in
+            KeyframeTrack(\.scale) {
+                LinearKeyframe(1, duration: 0.01)
+                CubicKeyframe(1.22, duration: 0.5)
+            }
+            KeyframeTrack(\.opacity) {
+                LinearKeyframe(0.75, duration: 0.01)
+                CubicKeyframe(0, duration: 0.5)
+            }
+        }
+    }
+}
+
+extension View {
+    func ripple<S: Shape>(_ shape: S, color: Color = .white, trigger: Int) -> some View {
+        modifier(RippleEffect(shape: shape, color: color, trigger: trigger))
+    }
+
+    /// A slow glow that swells and settles, for something waiting on you (a ringing call).
+    @ViewBuilder
+    func breathingGlow(_ color: Color, active: Bool) -> some View {
+        if active {
+            phaseAnimator([false, true]) { view, swell in
+                view.shadow(color: color.opacity(swell ? 0.6 : 0.15), radius: swell ? 14 : 5)
+            } animation: { _ in .easeInOut(duration: 1.1) }
+        } else {
+            self
+        }
+    }
+
+    /// A phone icon that wiggles every so often while a call rings (macOS 15 and later).
+    @ViewBuilder
+    func ringingWiggle(_ active: Bool) -> some View {
+        if #available(macOS 15, *) {
+            symbolEffect(.wiggle, options: .repeat(.periodic(delay: 0.9)), isActive: active)
+        } else {
+            self
+        }
+    }
+}
+
 extension Color {
     init(hex: UInt32) {
         self.init(red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255, blue: Double(hex & 0xFF) / 255)
@@ -103,12 +162,15 @@ extension View {
 struct Glass<Content: View>: View {
     var padding: CGFloat = 18
     var radius: CGFloat = 20
+    /// Keeps content that spills out (rings) inside the card's shape.
+    var clipped = false
     @ViewBuilder var content: Content
 
     var body: some View {
         content
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .clipShape(RoundedRectangle(cornerRadius: clipped ? radius : 0, style: .continuous))
             .glass(radius)
     }
 }
@@ -186,15 +248,24 @@ struct RoundButton: View {
     var colors: [Color] = Theme.accentColors
     var size: CGFloat = 44
     let action: () -> Void
+    @ViewState private var taps = 0
 
     var body: some View {
-        Button(action: action) {
+        Button {
+            taps += 1
+            Haptics.tap()
+            action()
+        } label: {
             Image(systemName: symbol)
                 .font(.system(size: size * 0.4, weight: .semibold))
                 .foregroundStyle(.white)
+                .contentTransition(.symbolEffect(.replace))
+                .symbolEffect(.bounce, value: taps)
                 .frame(width: size, height: size)
                 .background(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing), in: Circle())
+                .ripple(Circle(), color: colors.first ?? .white, trigger: taps)
                 .shadow(color: (colors.first ?? .clear).opacity(0.45), radius: 10, y: 4)
+                .animation(Theme.spring, value: colors)
         }
         .buttonStyle(.pressable(1.08))
     }
@@ -225,11 +296,17 @@ struct ActionTile: View {
     var colors: [Color] = Theme.accentColors
     var active = false
     let action: () -> Void
+    @ViewState private var taps = 0
+    @ViewState private var hovers = 0
 
     var body: some View {
-        Button(action: action) {
+        Button {
+            taps += 1
+            action()
+        } label: {
             VStack(alignment: .leading, spacing: 12) {
                 IconBadge(symbol: symbol, colors: colors, pulsing: active)
+                    .symbolEffect(.bounce, value: taps + hovers)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title).font(.headline)
                     if let subtitle {
@@ -247,6 +324,7 @@ struct ActionTile: View {
             )
         }
         .buttonStyle(.pressable)
+        .onHover { if $0 { hovers += 1 } }
     }
 }
 
@@ -269,17 +347,64 @@ struct Chip: View {
     }
 }
 
+/// A magnifying glass circling slowly, as if looking around (while searching for the phone).
+struct SearchingGlass: View {
+    var size: CGFloat = 40
+    var radius: CGFloat = 8
+
+    var body: some View {
+        TimelineView(.animation) { context in
+            let angle = context.date.timeIntervalSinceReferenceDate / 1.6 * 2 * .pi
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: size, weight: .light))
+                .foregroundStyle(Theme.accent)
+                .offset(x: cos(angle) * radius, y: sin(angle) * radius)
+        }
+    }
+}
+
+/// A bare icon button whose icon bounces when clicked (media controls).
+struct BouncingIconButton: View {
+    let symbol: String
+    let action: () -> Void
+    @ViewState private var taps = 0
+
+    var body: some View {
+        Button {
+            taps += 1
+            action()
+        } label: {
+            Image(systemName: symbol).font(.system(size: 16, weight: .semibold)).frame(width: 28, height: 28)
+                .symbolEffect(.bounce, value: taps)
+        }
+        .buttonStyle(.pressable(1.15))
+    }
+}
+
 /// Figma's bordered button: white text on a faint glass fill (macOS's own bordered style
 /// looks disabled on the dark glass). A destructive one gets magenta text.
 struct GlassButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
+        GlassButtonBody(configuration: configuration)
+    }
+}
+
+/// Brightens under the pointer and settles back when pressed.
+private struct GlassButtonBody: View {
+    let configuration: ButtonStyle.Configuration
+    @ViewState private var hovering = false
+
+    var body: some View {
         configuration.label
             .foregroundStyle(configuration.role == .destructive ? Theme.cyan : .white)
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
-            .background(Theme.glassFill, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .background(Color.white.opacity(hovering ? 0.15 : 0.09), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .onHover { inside in withAnimation(.easeOut(duration: 0.15)) { hovering = inside } }
             .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Theme.glassEdge))
-            .opacity(configuration.isPressed ? 0.7 : 1)
+            .opacity(configuration.isPressed ? 0.75 : 1)
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .animation(Theme.snappy, value: configuration.isPressed)
             .contentShape(Rectangle())
     }
 }
@@ -293,8 +418,9 @@ struct RowToggleStyle: ToggleStyle {
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: 8) {
             configuration.label.labelStyle(RowLabelStyle())
+                .symbolEffect(.bounce, value: configuration.isOn)
             Spacer(minLength: 12)
-            Toggle("", isOn: configuration.$isOn).toggleStyle(.switch).labelsHidden()
+            Toggle("", isOn: configuration.$isOn.animation(Theme.spring)).toggleStyle(.switch).labelsHidden()
         }
     }
 }
@@ -318,23 +444,25 @@ extension ToggleStyle where Self == RowToggleStyle {
 struct PulseRings: View {
     var active: Bool
     var color: Color = Theme.cyan
-    @ViewState private var animate = false
+    private static let period = 2.7
 
+    /// Driven by the clock rather than a repeating animation, so each ring fades in as it
+    /// starts and out as it grows, and the loop never jumps.
     var body: some View {
-        ZStack {
-            ForEach(0..<3, id: \.self) { i in
-                Circle()
-                    .stroke(color.opacity(0.55), lineWidth: 1.5)
-                    .scaleEffect(animate ? 1.9 : 0.85)
-                    .opacity(animate ? 0 : (active ? 0.9 : 0))
-                    .animation(
-                        active ? .easeOut(duration: 2.7).repeatForever(autoreverses: false).delay(Double(i) * 0.9) : .easeOut(duration: 0.3),
-                        value: animate
-                    )
+        TimelineView(.animation(paused: !active)) { context in
+            let time = context.date.timeIntervalSinceReferenceDate / Self.period
+            ZStack {
+                ForEach(0..<3, id: \.self) { i in
+                    let t = (time + Double(i) / 3).truncatingRemainder(dividingBy: 1)
+                    Circle()
+                        .stroke(color.opacity(0.55), lineWidth: 1.5)
+                        .scaleEffect(0.85 + 1.05 * (1 - (1 - t) * (1 - t)))
+                        .opacity(0.9 * min(1, t / 0.15) * (1 - t))
+                }
             }
         }
-        .onAppear { animate = active }
-        .onChange(of: active) { _, isActive in animate = isActive }
+        .opacity(active ? 1 : 0)
+        .animation(.easeOut(duration: 0.3), value: active)
     }
 }
 

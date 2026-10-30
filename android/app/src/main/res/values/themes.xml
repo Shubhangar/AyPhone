@@ -3,6 +3,7 @@
     <style name="Theme.AyPhone" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowBackground">@color/night</item>
     </style>
 
     <style name="Theme.AyPhone.Transparent" parent="android:Theme.Translucent.NoTitleBar">

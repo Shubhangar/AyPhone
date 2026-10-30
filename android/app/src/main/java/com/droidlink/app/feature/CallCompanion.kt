@@ -97,6 +97,7 @@ class CallCompanionService : InCallService() {
 
     override fun onCallAudioStateChanged(audioState: CallAudioState) {
         Link.send(msg("callSpeaker").put("on", audioState.route == CallAudioState.ROUTE_SPEAKER))
+        Link.send(msg("callMute").put("on", audioState.isMuted))
     }
 
     /** The last `call` message sent, so repeated details updates don't resend it. */
@@ -115,7 +116,10 @@ class CallCompanionService : InCallService() {
     override fun onCallRemoved(call: Call) {
         call.unregisterCallback(callUpdates)
         reportCalls()
-        if (calls.isEmpty()) Link.send(msg("callSpeaker").put("on", false))
+        if (calls.isEmpty()) {
+            Link.send(msg("callSpeaker").put("on", false))
+            Link.send(msg("callMute").put("on", false))
+        }
     }
 
     /**

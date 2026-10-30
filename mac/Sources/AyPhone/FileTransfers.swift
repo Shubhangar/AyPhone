@@ -25,19 +25,23 @@ final class FileTransfers: ObservableObject {
     @Published private(set) var transfers: [Transfer] = []
 
     var send: (Msg, @escaping () -> Void) -> Void = { _, done in done() }
-    var onReceived: (URL) -> Void = { _ in }
+    /// A file arrived; `glow` when the phone sent it from its Files option.
+    var onReceived: (URL, Bool) -> Void = { _, _ in }
 
     private var outgoingQueue: [(id: String, url: URL)] = []
+    /// Transfers started from the Files option (both directions), which play the glow.
+    private var glowing: Set<String> = []
     private var sending = false
     private var incoming: [String: FileHandle] = [:]
 
     // MARK: Outgoing
 
-    func enqueue(_ url: URL) {
+    func enqueue(_ url: URL, glow: Bool = false) {
         let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
         let id = UUID().uuidString
         transfers.insert(Transfer(id: id, name: url.lastPathComponent, size: size, direction: .toPhone, localURL: url), at: 0)
         outgoingQueue.append((id, url))
+        if glow { glowing.insert(id) }
         pump()
     }
 
@@ -58,6 +62,7 @@ final class FileTransfers: ObservableObject {
         offer.name = t.name
         offer.size = t.size
         offer.mime = UTType(filenameExtension: next.url.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+        if glowing.remove(next.id) != nil { offer.glow = true }
         send(offer) { [weak self] in self?.sendChunk(id: next.id, handle: handle, seq: 0) }
     }
 
@@ -94,6 +99,7 @@ final class FileTransfers: ObservableObject {
             FileManager.default.createFile(atPath: url.path, contents: nil)
             guard let handle = try? FileHandle(forWritingTo: url) else { return }
             incoming[id] = handle
+            if m.glow == true { glowing.insert(id) }
             transfers.insert(Transfer(id: id, name: url.lastPathComponent, size: m.size ?? 0,
                                       direction: .fromPhone, status: .active, localURL: url), at: 0)
         case "fileChunk":
@@ -104,7 +110,8 @@ final class FileTransfers: ObservableObject {
             guard let handle = incoming.removeValue(forKey: id) else { return }
             try? handle.close()
             update(id) { $0.status = .done; $0.transferred = max($0.transferred, $0.size) }
-            if let url = transfers.first(where: { $0.id == id })?.localURL { onReceived(url) }
+            let glow = glowing.remove(id) != nil
+            if let url = transfers.first(where: { $0.id == id })?.localURL { onReceived(url, glow) }
         default:
             break
         }

@@ -40,6 +40,18 @@ object Calls {
         Link.send(m)
     }
 
+    /** Calls a number the Mac picked (from a contact or a conversation). */
+    @SuppressLint("MissingPermission")
+    fun dial(ctx: Context, number: String) {
+        if (number.isBlank()) return
+        try {
+            ctx.getSystemService(TelecomManager::class.java).placeCall(android.net.Uri.fromParts("tel", number, null), android.os.Bundle())
+        } catch (e: SecurityException) {
+            Log.w("AyPhone", "calling from the Mac needs the phone permission: $e")
+            Link.send(msg("dialFailed").put("action", "permission"))
+        }
+    }
+
     @SuppressLint("MissingPermission")
     @Suppress("DEPRECATION")
     fun perform(ctx: Context, action: String) {
@@ -53,6 +65,7 @@ object Calls {
                 "mute" -> {
                     val audio = ctx.getSystemService(AudioManager::class.java)
                     audio.isMicrophoneMute = !audio.isMicrophoneMute
+                    Link.send(msg("callMute").put("on", audio.isMicrophoneMute))
                 }
                 "speaker" -> setSpeaker(ctx, !onSpeaker(ctx.getSystemService(AudioManager::class.java)))
             }

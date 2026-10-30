@@ -103,6 +103,11 @@ object Notifications {
         post(ctx, "Open $appName", "Your Mac asked to open $appName. Allow \"Display over other apps\" to skip this tap.", intent)
     }
 
+    /** An alert from AyPhone itself (the Mac's battery…); tapping it opens the app. */
+    fun alert(ctx: Context, title: String, text: String) {
+        post(ctx, title, text, Intent(ctx, com.droidlink.app.ui.MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
     private fun post(ctx: Context, title: String, text: String, intent: Intent) {
         val id = nextId.incrementAndGet()
         val pi = PendingIntent.getActivity(ctx, id, intent, PendingIntent.FLAG_IMMUTABLE)
