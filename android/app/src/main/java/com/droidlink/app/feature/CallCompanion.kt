@@ -99,8 +99,62 @@ class CallCompanionService : InCallService() {
         Link.send(msg("callSpeaker").put("on", audioState.route == CallAudioState.ROUTE_SPEAKER))
     }
 
+    /** The last `call` message sent, so repeated details updates don't resend it. */
+    private var lastReport: String? = null
+
+    private val callUpdates = object : Call.Callback() {
+        override fun onStateChanged(call: Call, state: Int) = reportCalls()
+        override fun onDetailsChanged(call: Call, details: Call.Details) = reportCalls()
+    }
+
+    override fun onCallAdded(call: Call) {
+        call.registerCallback(callUpdates)
+        reportCalls()
+    }
+
     override fun onCallRemoved(call: Call) {
+        call.unregisterCallback(callUpdates)
+        reportCalls()
         if (calls.isEmpty()) Link.send(msg("callSpeaker").put("on", false))
+    }
+
+    /**
+     * Sends the phone calls (WhatsApp-style calls come through their notifications) as one `call`
+     * message. Android's own call-state broadcast can't tell a second caller from the person
+     * you're talking to, so while bound this replaces it ([Calls.onPhoneState]): a call ringing
+     * during another one is sent as `waiting`.
+     */
+    private fun reportCalls() {
+        val phoneCalls = calls.filter {
+            !it.details.hasProperty(Call.Details.PROPERTY_SELF_MANAGED) &&
+                it.state != Call.STATE_DISCONNECTED && it.state != Call.STATE_DISCONNECTING
+        }
+        val ringing = phoneCalls.firstOrNull { it.state == Call.STATE_RINGING }
+        val ongoing = phoneCalls.filter { it !== ringing }
+        val main = ongoing.firstOrNull { it.state == Call.STATE_ACTIVE } ?: ongoing.firstOrNull() ?: ringing
+        val m = msg("call").put("telecom", true).put("state", when {
+            main == null -> "idle"
+            main === ringing -> "ringing"
+            else -> "offhook"
+        })
+        main?.let { describe(it) }?.let { (number, name) -> m.put("number", number).put("name", name) }
+        if (ringing != null && main !== ringing) {
+            describe(ringing)?.let { (number, name) -> m.put("waitingNumber", number).put("waitingName", name) }
+                ?: m.put("waitingName", "Unknown caller")
+        }
+        val report = m.toString()
+        if (report == lastReport) return
+        lastReport = report
+        Link.send(m)
+    }
+
+    /** A call's number and contact name (either may be null; null when neither is known). */
+    private fun describe(call: Call): Pair<String?, String?>? {
+        val number = call.details.handle?.schemeSpecificPart?.takeIf { it.isNotEmpty() }
+        val name = number?.let { Sms.contactName(this, it) }
+            ?: (if (Build.VERSION.SDK_INT >= 30) call.details.contactDisplayName else null)
+            ?: call.details.callerDisplayName
+        return if (number == null && name.isNullOrEmpty()) null else number to name?.takeIf { it.isNotEmpty() }
     }
 
     /** Runs a Mac call button; false when there's no call to act on. */

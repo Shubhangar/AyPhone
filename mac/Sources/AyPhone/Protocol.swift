@@ -49,6 +49,11 @@ struct Msg: Codable {
     // Calls, media, find phone
     var state: String?
     var number: String?
+    /// call: a second caller ringing during this call, and whether the phone's call companion
+    /// (which sees every call separately) sent it.
+    var waitingNumber: String?
+    var waitingName: String?
+    var telecom: Bool?
     var action: String?
     var artist: String?
     var playing: Bool?

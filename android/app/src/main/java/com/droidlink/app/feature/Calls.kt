@@ -27,6 +27,8 @@ object Calls {
         }
         // Our speaker request outlives the call otherwise, and would route the next one too.
         if (state == "idle" && speakerOn) setSpeaker(ctx, false)
+        // The call companion reports each call on its own (a second caller as waiting) while bound.
+        if (CallCompanionService.instance != null) return
         val m = msg("call").put("state", state)
         // Only present when READ_CALL_LOG is granted; Android then sends this broadcast twice.
         @Suppress("DEPRECATION")

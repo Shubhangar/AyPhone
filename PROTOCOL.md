@@ -54,7 +54,7 @@ Each frame is:
 | `smsMessages` | A→M | `threadId`, `messages` [{`id`,`threadId`,`address`,`body`,`date`,`outgoing`}] |
 | `smsSend` | M→A | `address`, `text` |
 | `smsChanged` | A→M | |
-| `call` | A→M | `state` (`ringing`/`offhook`/`idle`), `number`, `name` |
+| `call` | A→M | `state` (`ringing`/`offhook`/`idle`), `number`, `name`; from the call companion also `telecom: true` and, while a second call rings during this one, `waitingNumber`/`waitingName` |
 | `callAction` | M→A | `action` (`answer`/`decline`/`end`/`mute`/`speaker`, which toggles the loudspeaker) |
 | `callSpeaker` | A→M | `on`: whether the call is on the phone's loudspeaker (after each `speaker` action) |
 | `callerInfo` | A→M | `name` (title of the dialer's call notification: a name, or the number if unsaved) |
