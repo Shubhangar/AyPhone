@@ -60,7 +60,7 @@ struct OverviewView: View {
                         .fixedSize(horizontal: false, vertical: true)
                     HStack(spacing: 6) {
                         if state.connected {
-                            Chip(text: "Connected", symbol: "checkmark.circle.fill", tint: Theme.green)
+                            Chip(text: "Connected", symbol: "checkmark.circle.fill", tint: Theme.connectedTint)
                             if let transport = state.transport {
                                 Chip(text: transport, symbol: transport == "USB" ? "cable.connector"
                                      : transport == "Bluetooth" ? "antenna.radiowaves.left.and.right" : "wifi")
@@ -146,7 +146,7 @@ struct OverviewView: View {
                     .font(.title3)
                     .onSubmit(sendURL)
                 Button("Open on phone", action: sendURL)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.borderedProminent).tint(Theme.indigo)
                     .disabled(urlText.isEmpty || !state.connected)
             }
         }
@@ -191,7 +191,7 @@ struct OverviewView: View {
                     Label("Show calls on this Mac", systemImage: "phone")
                 }
             }
-            .toggleStyle(.switch)
+            .toggleStyle(.row)
         }
     }
 
@@ -244,7 +244,7 @@ struct NotificationPermissionCard: View {
                         state.requestNotificationPermission()
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glass)
             }
         }
     }
@@ -260,7 +260,7 @@ struct CallCard: View {
     var body: some View {
         HStack(spacing: 16) {
             ZStack {
-                if call.state == "ringing" { PulseRings(active: true, color: Theme.green) }
+                if call.state == "ringing" { PulseRings(active: true, color: Theme.avatarRing) }
                 Avatar(name: call.display, size: 52)
             }
             .frame(width: 64, height: 64)
@@ -270,7 +270,8 @@ struct CallCard: View {
                     .foregroundStyle(Theme.green)
                     .textCase(.uppercase)
                 Text(call.display).font(.title2.weight(.semibold))
-                Text(state.callPanel?.id == "telephony" ? (state.callPanel?.detail ?? "") : "Audio stays on your phone")
+                Text(call.hasWaiting ? "\(call.waitingDisplay) is calling"
+                     : state.callPanel?.id == "telephony" ? (state.callPanel?.detail ?? "") : "Audio stays on your phone")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
@@ -284,14 +285,14 @@ struct CallCard: View {
             } else {
                 HStack(spacing: 14) {
                     if call.state == "ringing" {
-                        RoundButton(symbol: "phone.down.fill", colors: [Theme.red, Theme.pink], size: 50) { state.callAction("decline") }
-                        RoundButton(symbol: "phone.fill", colors: [Theme.green, Theme.mint], size: 50) { state.callAction("answer") }
+                        RoundButton(symbol: "phone.down.fill", colors: Theme.declineColors, size: 50) { state.callAction("decline") }
+                        RoundButton(symbol: "phone.fill", colors: Theme.answerColors, size: 50) { state.callAction("answer") }
                     } else {
                         RoundButton(symbol: state.speakerOn ? "speaker.wave.3.fill" : "speaker.fill",
-                                    colors: state.speakerOn ? [Theme.green, Theme.mint] : [Color.gray, Color.gray.opacity(0.7)], size: 46) { state.callAction("speaker") }
+                                    colors: state.speakerOn ? Theme.accentColors : Theme.neutralColors, size: 46) { state.callAction("speaker") }
                                     .help(state.speakerOn ? "Speaker off" : "Phone speaker")
-                        RoundButton(symbol: "mic.slash.fill", colors: [Color.gray, Color.gray.opacity(0.7)], size: 46) { state.callAction("mute") }
-                        RoundButton(symbol: "phone.down.fill", colors: [Theme.red, Theme.pink], size: 50) { state.callAction("end") }
+                        RoundButton(symbol: "mic.slash.fill", colors: Theme.neutralColors, size: 46) { state.callAction("mute") }
+                        RoundButton(symbol: "phone.down.fill", colors: Theme.declineColors, size: 50) { state.callAction("end") }
                     }
                 }
             }
@@ -300,9 +301,9 @@ struct CallCard: View {
         .glass(22)
         .overlay(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(Theme.green.opacity(glow ? 0.7 : 0.25), lineWidth: 1.5)
+                .strokeBorder(Theme.indigo.opacity(glow ? 0.7 : 0.25), lineWidth: 1.5)
         )
-        .shadow(color: Theme.green.opacity(glow ? 0.35 : 0.1), radius: 18)
+        .shadow(color: Theme.indigo.opacity(glow ? 0.35 : 0.1), radius: 18)
         .onAppear {
             withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) { glow = true }
         }

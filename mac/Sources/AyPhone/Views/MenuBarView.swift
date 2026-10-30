@@ -19,18 +19,18 @@ struct MenuBarView: View {
                     }
                     Spacer()
                     if call.state == "ringing" {
-                        RoundButton(symbol: "phone.down.fill", colors: [Theme.red, Theme.pink], size: 30) { state.callAction("decline") }
-                        RoundButton(symbol: "phone.fill", colors: [Theme.green, Theme.mint], size: 30) { state.callAction("answer") }
+                        RoundButton(symbol: "phone.fill", colors: Theme.answerColors, size: 30) { state.callAction("answer") }
+                        RoundButton(symbol: "phone.down.fill", colors: Theme.declineColors, size: 30) { state.callAction("decline") }
                     } else {
                         RoundButton(symbol: state.speakerOn ? "speaker.wave.3.fill" : "speaker.fill",
-                                    colors: state.speakerOn ? [Theme.green, Theme.mint] : [.gray, .gray.opacity(0.7)], size: 30) { state.callAction("speaker") }
+                                    colors: state.speakerOn ? Theme.accentColors : Theme.neutralColors, size: 30) { state.callAction("speaker") }
                                     .help(state.speakerOn ? "Speaker off" : "Phone speaker")
-                        RoundButton(symbol: "mic.slash.fill", colors: [.gray, .gray.opacity(0.7)], size: 30) { state.callAction("mute") }
-                        RoundButton(symbol: "phone.down.fill", colors: [Theme.red, Theme.pink], size: 30) { state.callAction("end") }
+                        RoundButton(symbol: "mic.slash.fill", colors: Theme.neutralColors, size: 30) { state.callAction("mute") }
+                        RoundButton(symbol: "phone.down.fill", colors: Theme.declineColors, size: 30) { state.callAction("end") }
                     }
                 }
                 .padding(10)
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .background(Theme.glassFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
 
@@ -46,6 +46,8 @@ struct MenuBarView: View {
                         if let artist = media.artist { Text(artist).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                     }
                     Spacer()
+                    Button { state.mediaAction("previous") } label: { Image(systemName: "backward.fill") }
+                        .buttonStyle(.pressable(1.15))
                     Button { state.mediaAction(media.playing ? "pause" : "play") } label: {
                         Image(systemName: media.playing ? "pause.fill" : "play.fill")
                             .contentTransition(.symbolEffect(.replace))
@@ -54,13 +56,14 @@ struct MenuBarView: View {
                     Button { state.mediaAction("next") } label: { Image(systemName: "forward.fill") }
                         .buttonStyle(.pressable(1.15))
                 }
+                .font(.callout.weight(.semibold))
                 .padding(10)
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .background(Theme.glassFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
 
             HStack(spacing: 8) {
                 quick("doc.on.clipboard", "Clipboard") { state.sendClipboardNow() }
-                quick("arrow.down.doc", "Paste ⌃⌥V") { state.pasteFromPhone() }
+                quick("arrow.down.doc", "Paste") { state.pasteFromPhone() }
                 quick(state.ringing ? "speaker.wave.3.fill" : "speaker.wave.2", "Find") { state.toggleFindPhone() }
                 quick("rectangle.on.rectangle", "Mirror") { state.mirrorScreen() }
                 if adb.advancedEnabled {
@@ -88,21 +91,20 @@ struct MenuBarView: View {
             }
 
             Divider().opacity(0.5)
-            HStack {
-                Toggle("Notifications", isOn: $state.mirrorNotifications)
-                Spacer()
-                Toggle("Calls", isOn: $state.showCallsOnMac)
-            }
+            switchRow("Notifications", isOn: $state.mirrorNotifications)
+            switchRow("Calls", isOn: $state.showCallsOnMac)
             Divider().opacity(0.5)
             HStack {
                 Button("Open AyPhone") { state.showMainWindow() }
+                    .fontWeight(.medium)
+                    .foregroundStyle(Theme.cyan)
                 Spacer()
                 Button("Quit") { NSApp.terminate(nil) }.foregroundStyle(.secondary)
             }
             .buttonStyle(.pressable)
         }
         .toggleStyle(.switch)
-        .controlSize(.small)
+        .tint(Theme.cyan)
         .padding(14)
         .frame(width: 320)
         // The menu bar window keeps the size it first had; pinning the height to the content
@@ -119,11 +121,9 @@ struct MenuBarView: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            ZStack {
-                PulseRings(active: state.connected)
-                Image(systemName: "iphone.gen3").font(.system(size: 22, weight: .light)).foregroundStyle(Theme.accent)
-            }
-            .frame(width: 36, height: 36)
+            Image(systemName: "iphone.gen3").font(.system(size: 22, weight: .light)).foregroundStyle(Theme.indigo)
+                .frame(width: 36, height: 36)
+                .background(Theme.indigo.opacity(0.15), in: Circle())
             VStack(alignment: .leading, spacing: 1) {
                 Text(state.connected ? state.phoneName : "Not connected").font(.headline)
                 Text(state.connected ? (state.transport ?? "") : "Waiting for phone…")
@@ -136,6 +136,14 @@ struct MenuBarView: View {
         }
     }
 
+    private func switchRow(_ title: String, isOn: Binding<Bool>) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Toggle(title, isOn: isOn).labelsHidden()
+        }
+    }
+
     private func quick(_ symbol: String, _ title: String, enabled: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 5) {
@@ -144,7 +152,7 @@ struct MenuBarView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 9)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .background(Theme.glassFill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(.pressable)
         .disabled(!(enabled || state.connected))

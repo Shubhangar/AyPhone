@@ -127,7 +127,6 @@ private let panelLog = Logger(subsystem: "com.ayphone.mac", category: "bluetooth
 
 struct CallPanelView: View {
     @EnvironmentObject private var state: AppState
-    @ViewState private var glow = false
 
     var body: some View {
         Group {
@@ -145,7 +144,8 @@ struct CallPanelView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
                 ZStack {
-                    if m.incoming { PulseRings(active: true, color: Theme.green) }
+                    if m.incoming { PulseRings(active: true, color: Theme.avatarRing) }
+                    Circle().strokeBorder(Theme.avatarRing.opacity(0.5), lineWidth: 1.5)
                     Avatar(name: m.caller, size: 46)
                     if let icon = m.icon {
                         Image(nsImage: icon)
@@ -161,7 +161,7 @@ struct CallPanelView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(m.app) · \(m.incoming ? "Incoming call" : "On a call")")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(m.incoming ? Theme.green : .secondary)
+                        .foregroundStyle(Theme.callLabel)
                     Text(m.caller).font(.title3.weight(.semibold)).lineLimit(1)
                     if !m.detail.isEmpty, m.detail != m.caller {
                         Text(m.detail).font(.callout).foregroundStyle(.secondary).lineLimit(1)
@@ -171,7 +171,7 @@ struct CallPanelView: View {
                 Button { state.hideCallPanel(m.id) } label: {
                     Image(systemName: "xmark").font(.system(size: 11, weight: .bold))
                         .frame(width: 22, height: 22)
-                        .background(.thinMaterial, in: Circle())
+                        .background(Theme.glassFill, in: Circle())
                 }
                 .buttonStyle(.pressable(1.12))
                 .foregroundStyle(.secondary)
@@ -179,8 +179,10 @@ struct CallPanelView: View {
             }
 
             if !m.buttons.isEmpty {
-                HStack(spacing: 10) {
-                    ForEach(Array(m.buttons.enumerated()), id: \.offset) { _, button in
+                HStack(spacing: 8) {
+                    // Answer first and End/Decline last, whatever order the call's app uses.
+                    ForEach(Array(m.buttons.enumerated()).sorted { $0.element.kind.order < $1.element.kind.order || ($0.element.kind.order == $1.element.kind.order && $0.offset < $1.offset) },
+                            id: \.offset) { _, button in
                         CallActionButton(button: button) { state.performCallButton(button) }
                     }
                 }
@@ -190,13 +192,9 @@ struct CallPanelView: View {
         .frame(width: 370)
         .background(VisualEffect().clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous)))
         .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .strokeBorder(m.incoming ? Theme.green.opacity(glow ? 0.8 : 0.3) : Color.white.opacity(0.14), lineWidth: m.incoming ? 1.5 : 1)
+            RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
         )
-        .shadow(color: m.incoming ? Theme.green.opacity(glow ? 0.35 : 0.12) : .black.opacity(0.25), radius: 14, y: 4)
-        .onAppear {
-            withAnimation(.easeInOut(duration: 1).repeatForever(autoreverses: true)) { glow = true }
-        }
+        .shadow(color: .black.opacity(0.25), radius: 14, y: 4)
     }
 }
 
@@ -204,19 +202,18 @@ struct CallActionButton: View {
     let button: CallPanelModel.Button
     let action: () -> Void
 
-    private var colors: [Color] {
-        switch button.kind {
-        case .accept: [Theme.green, Theme.mint]
-        case .reject: [Theme.red, Theme.pink]
-        case .neutral: [Color.gray.opacity(0.55), Color.gray.opacity(0.4)]
-        }
-    }
-
     private var symbol: String? {
+        let title = button.title.lowercased()
         switch button.kind {
-        case .accept: "phone.fill"
-        case .reject: "phone.down.fill"
-        case .neutral: nil
+        case .accept: return "phone.fill"
+        case .reject: return "phone.down.fill"
+        case .neutral:
+            if title.contains("speaker") { return "speaker.wave.3.fill" }
+            if title.contains("unmute") { return "mic.fill" }
+            if title.contains("mute") { return "mic.slash.fill" }
+            if title.contains("to mac") { return "laptopcomputer" }
+            if title.contains("phone") { return "iphone" }
+            return nil
         }
     }
 
@@ -230,8 +227,13 @@ struct CallActionButton: View {
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
-            .background(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing), in: Capsule())
-            .shadow(color: (colors.first ?? .clear).opacity(button.kind == .neutral ? 0 : 0.4), radius: 8, y: 3)
+            .background {
+                switch button.kind {
+                case .accept: Capsule().fill(LinearGradient(colors: Theme.answerColors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                case .reject: Capsule().fill(LinearGradient(colors: Theme.declineColors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                case .neutral: Capsule().fill(Theme.glassFill).overlay(Capsule().strokeBorder(Theme.glassEdge))
+                }
+            }
         }
         .buttonStyle(.pressable(1.04))
     }

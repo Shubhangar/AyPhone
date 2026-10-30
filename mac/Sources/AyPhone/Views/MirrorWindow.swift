@@ -83,15 +83,15 @@ struct MirrorWindowView: View {
             case .denied:
                 Image(systemName: "hand.raised.fill").font(.system(size: 34)).foregroundStyle(Theme.orange)
                 Text("Sharing was declined on the phone").font(.headline)
-                Button("Try again") { mirror.start() }.buttonStyle(.borderedProminent)
+                Button("Try again") { mirror.start() }.buttonStyle(.borderedProminent).tint(Theme.indigo)
             case .failed(let message):
                 Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 34)).foregroundStyle(Theme.orange)
                 Text(message).font(.headline).multilineTextAlignment(.center)
-                Button("Try again") { mirror.start() }.buttonStyle(.borderedProminent)
+                Button("Try again") { mirror.start() }.buttonStyle(.borderedProminent).tint(Theme.indigo)
             case .idle:
                 Image(systemName: "rectangle.on.rectangle").font(.system(size: 34)).foregroundStyle(Theme.accent)
                 Text("Mirroring stopped").font(.headline)
-                Button("Start again") { mirror.start() }.buttonStyle(.borderedProminent)
+                Button("Start again") { mirror.start() }.buttonStyle(.borderedProminent).tint(Theme.indigo)
             }
         }
         .padding(24)

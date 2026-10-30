@@ -17,7 +17,7 @@ struct PairingView: View {
                     } label: {
                         Label("Mirror screen", systemImage: "rectangle.on.rectangle")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.borderedProminent).tint(Theme.indigo)
                     .disabled(!state.connected)
                     .help("Mirror your phone. No developer settings needed; tap Start now on the phone.")
                 }
@@ -81,6 +81,7 @@ struct PairingView: View {
                     .help("Use this if your Mac's IP address changed")
                 Button("Reset pairing…", role: .destructive) { confirmReset = true }
             }
+            .buttonStyle(.glass)
         }
         .padding(24)
         .frame(width: 340)
@@ -91,13 +92,13 @@ struct PairingView: View {
 
     private var advancedCard: some View {
         SetupCard(symbol: "hammer.fill", colors: [Color.gray, Color.gray.opacity(0.7)], title: "Advanced features (developer options)",
-                  status: adb.advancedEnabled ? "On" : "Off", statusColor: adb.advancedEnabled ? Theme.green : .secondary) {
+                  status: adb.advancedEnabled ? "On" : "Off", statusColor: adb.advancedEnabled ? Theme.connectedTint : .secondary) {
             Text("Not needed for everyday use: notifications, calls, messages, files, clipboard and Mirror screen all work without it.")
                 .font(.callout).foregroundStyle(.secondary)
             Text("Turning this on adds phone apps in their own Mac windows, the phone camera, advanced mirroring, USB connection and fully automatic clipboard, but it needs USB debugging switched on on the phone. Keep it off unless you use those.")
                 .font(.caption).foregroundStyle(.secondary)
             Toggle("Use advanced features", isOn: $adb.advancedEnabled)
-                .toggleStyle(.switch)
+                .toggleStyle(.row)
         }
     }
 
@@ -122,7 +123,7 @@ struct PairingView: View {
 
     private var usbStatus: (text: String, color: Color) {
         if adb.adbPath == nil { return ("adb missing", Theme.orange) }
-        if adb.hasUSBPhone { return ("Plugged in · forwarding on", Theme.green) }
+        if adb.hasUSBPhone { return ("Plugged in · forwarding on", Theme.connectedTint) }
         if adb.usbState == "unauthorized" { return ("Tap Allow on your phone", Theme.orange) }
         return ("No phone plugged in", .secondary)
     }
@@ -130,16 +131,16 @@ struct PairingView: View {
     private var mirroringCard: some View {
         SetupCard(symbol: "rectangle.on.rectangle", colors: [Theme.indigo, Theme.pink], title: "Advanced: apps in windows & camera",
                   status: adb.scrcpyPath == nil ? "Not installed" : "Ready",
-                  statusColor: adb.scrcpyPath == nil ? .secondary : Theme.green) {
+                  statusColor: adb.scrcpyPath == nil ? .secondary : Theme.connectedTint) {
             Text("Mirror screen on the Overview page works for everyone. With USB or wireless debugging on, the open-source scrcpy (about 10 MB) adds phone apps in their own Mac windows, the phone camera, and advanced mirroring with full keyboard and multi-touch.")
                 .font(.callout).foregroundStyle(.secondary)
             Toggle(isOn: $adb.wirelessEnabled) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Mirror over Wi-Fi")
-                    Text(wirelessStatus).font(.caption).foregroundStyle(adb.wirelessSerial != nil ? Theme.green : .secondary)
+                    Text(wirelessStatus).font(.caption).foregroundStyle(adb.wirelessSerial != nil ? Theme.connectedTint : .secondary)
                 }
             }
-            .toggleStyle(.switch)
+            .toggleStyle(.row)
             HStack {
                 if adb.scrcpyPath == nil {
                     Button {
@@ -151,7 +152,7 @@ struct PairingView: View {
                             Text("Install mirroring")
                         }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.borderedProminent).tint(Theme.indigo)
                     .disabled(adb.installingScrcpy)
                 } else {
                     Button("Advanced mirroring") { state.mirrorScreenAdvanced() }
@@ -168,7 +169,7 @@ struct PairingView: View {
     }
 
     private var bluetoothCallsCard: some View {
-        SetupCard(symbol: "phone.connection.fill", colors: [Theme.green, Theme.mint], title: "Calls on this Mac (Bluetooth)",
+        SetupCard(symbol: "phone.connection.fill", colors: [Theme.cyan, Theme.green], title: "Calls on this Mac (Bluetooth)",
                   status: bluetoothStatus.text, statusColor: bluetoothStatus.color) {
             Text("Answer regular phone calls on the Mac and talk through its speakers and mic, then move the call back to your phone anytime. Experimental. Android keeps call audio away from apps, so this uses Bluetooth, like a car kit.")
                 .font(.callout).foregroundStyle(.secondary)
@@ -183,7 +184,7 @@ struct PairingView: View {
                 get: { state.bluetooth.enabled },
                 set: { state.bluetooth.enabled = $0 }
             ))
-                .toggleStyle(.switch)
+                .toggleStyle(.row)
         }
     }
 
@@ -192,7 +193,7 @@ struct PairingView: View {
         case .off: return ("Off", .secondary)
         case .noPhone: return ("Pair your phone in Bluetooth settings", Theme.orange)
         case .connecting(let name): return ("Connecting to \(name)…", .secondary)
-        case .ready(let name): return ("Ready · \(name)", Theme.green)
+        case .ready(let name): return ("Ready · \(name)", Theme.connectedTint)
         case .failed(let message): return (message, Theme.orange)
         }
     }

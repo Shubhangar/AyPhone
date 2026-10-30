@@ -49,7 +49,7 @@ struct FilesView: View {
             Text("Files from your phone land in your Downloads folder. Drag a received file out to put it anywhere.")
                 .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
             Button("Choose files…", action: pickFiles)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.borderedProminent).tint(Theme.indigo)
                 .disabled(!state.connected)
         }
         .padding(30)

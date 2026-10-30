@@ -102,7 +102,8 @@ import com.journeyapps.barcodescanner.ScanOptions
 // From the logo: violet and magenta accents over a deep purple→blue backdrop.
 private val Indigo = Color(0xFF895AFF)
 private val Cyan = Color(0xFFF36BFF)
-private val Green = Color(0xFF33D67A)
+/** The soft violet glow behind the logo while connected. */
+private val Glow = Color(0xFFC981FF)
 private val DeepPurple = Color(0xFF361A6A)
 private val DeepBlue = Color(0xFF084B7B)
 private val AccentBrush = Brush.linearGradient(listOf(Indigo, Cyan))
@@ -315,7 +316,7 @@ class MainActivity : ComponentActivity() {
         )
         val dot by animateColorAsState(
             when (state) {
-                Link.State.Connected -> Green
+                Link.State.Connected -> Glow
                 Link.State.Connecting -> Cyan
                 else -> Color.Gray
             }, label = "dot"
@@ -332,6 +333,7 @@ class MainActivity : ComponentActivity() {
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(76.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(76.dp).clip(CircleShape).background(Glow.copy(alpha = 0.18f)))
                     if (connected || searching) {
                         Box(
                             Modifier
@@ -347,9 +349,7 @@ class MainActivity : ComponentActivity() {
                     }
                     Image(
                         painterResource(R.drawable.ic_logo), contentDescription = null,
-                        modifier = Modifier
-                            .size(58.dp)
-                            .clip(RoundedCornerShape(15.dp))
+                        modifier = Modifier.size(58.dp)
                     )
                 }
                 Spacer(Modifier.width(18.dp))
@@ -426,7 +426,7 @@ class MainActivity : ComponentActivity() {
                 Modifier
                     .size(36.dp)
                     .clip(RoundedCornerShape(11.dp))
-                    .background(AccentBrush),
+                    .background(Indigo),
                 contentAlignment = Alignment.Center
             ) { Icon(icon, null, tint = Color.White, modifier = Modifier.size(20.dp)) }
             Spacer(Modifier.height(10.dp))
@@ -454,7 +454,7 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun SetupRow(title: String, subtitle: String, done: Boolean, last: Boolean = false, onClick: (() -> Unit)?) {
-        val tint by animateColorAsState(if (done) Green else MaterialTheme.colorScheme.outline, label = "check")
+        val tint by animateColorAsState(if (done) Cyan else MaterialTheme.colorScheme.outline, label = "check")
         Column {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -475,8 +475,8 @@ class MainActivity : ComponentActivity() {
                 Box(
                     Modifier
                         .fillMaxWidth()
-                        .height(0.5.dp)
-                        .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                        .height(1.dp)
+                        .background(Color.White.copy(alpha = 0.07f))
                 )
             }
         }

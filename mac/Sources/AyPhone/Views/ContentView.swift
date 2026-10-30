@@ -48,6 +48,9 @@ struct ContentView: View {
                 }
                 .id(section)
                 .transition(.opacity.combined(with: .offset(y: 10)))
+                // The window has no toolbar here, so pages start right under the top edge
+                // (their own padding), not below an empty title bar.
+                .ignoresSafeArea(.container, edges: .top)
             }
             .animation(.easeOut(duration: 0.25), value: section)
             .overlay(alignment: .bottom) {
@@ -82,18 +85,39 @@ struct ContentView: View {
     }
 
     private var sidebar: some View {
-        List(selection: $section) {
+        // Rows draw their own violet selection: macOS paints a List's selection in the system
+        // accent colour, whatever the app's tint.
+        List {
             ForEach(Section.allCases) { s in
-                Label(s.rawValue, systemImage: s.icon)
-                    .badge(s == .notifications ? state.notifications.count : 0)
-                    .tag(s)
+                let selected = (section ?? .overview) == s
+                Button { section = s } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: s.icon)
+                            .frame(width: 18)
+                            .foregroundStyle(selected ? Color.primary : Color.secondary)
+                        Text(s.rawValue)
+                        Spacer(minLength: 0)
+                        if s == .notifications, !state.notifications.isEmpty {
+                            Text("\(state.notifications.count)").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .contentShape(Rectangle())
+                    .background(selected ? Theme.indigo.opacity(0.7) : .clear,
+                                in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .listRowInsets(EdgeInsets(top: 1, leading: 0, bottom: 1, trailing: 0))
             }
         }
         .navigationSplitViewColumnWidth(min: 190, ideal: 210)
         .safeAreaInset(edge: .top) {
             HStack(spacing: 8) {
-                Image(nsImage: NSApp.applicationIconImage)
+                Image(nsImage: LogoGlyph.connected)
                     .resizable()
+                    .renderingMode(.template)
+                    .foregroundStyle(.white)
                     .frame(width: 28, height: 28)
                 Text("AyPhone").font(.system(size: 17, weight: .bold, design: .rounded))
                 Spacer()
@@ -112,9 +136,9 @@ struct ConnectionPill: View {
     var body: some View {
         HStack(spacing: 10) {
             ZStack {
-                PulseRings(active: state.connected, color: Theme.green).frame(width: 10, height: 10)
+                PulseRings(active: state.connected, color: Theme.connectedDot).frame(width: 10, height: 10)
                 Circle()
-                    .fill(state.connected ? Theme.green : Color.secondary.opacity(0.5))
+                    .fill(state.connected ? Theme.connectedDot : Color.secondary.opacity(0.5))
                     .frame(width: 8, height: 8)
             }
             VStack(alignment: .leading, spacing: 1) {

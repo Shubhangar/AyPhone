@@ -23,14 +23,49 @@ enum Theme {
     static let accentColors = [indigo, cyan]
     static let accent = LinearGradient(colors: accentColors, startPoint: .topLeading, endPoint: .bottomTrailing)
 
+    /// Call buttons: answer violet→blue, decline/end violet→pink, neutral grey.
+    static let answerColors = [Color(hex: 0x7F48ED), Color(hex: 0x3A4AF4)]
+    static let declineColors = [Color(hex: 0x7045FF), pink]
+    static let neutralColors = [Color(hex: 0x8F8F94), Color(hex: 0x66666B)]
+    /// "Phone · Incoming call" above the caller's name.
+    static let callLabel = Color(hex: 0xA6C2FF)
+    /// The ring around the caller's avatar.
+    static let avatarRing = Color(hex: 0x9D33D6)
+    /// The "Connected" chip.
+    static let connectedTint = Color(hex: 0xEE90FF)
+    /// The connected dot in the sidebar.
+    static let connectedDot = Color(hex: 0x13ECF3)
+    /// Glass controls on glass: a faint white fill and edge.
+    static let glassFill = Color.white.opacity(0.09)
+    static let glassEdge = Color.white.opacity(0.16)
+
+    /// Icon badges are solid: each gradient pair a view asks for maps to one colour.
+    static func badgeColor(_ colors: [Color]) -> Color {
+        let solid: [([Color], Color)] = [
+            ([cyan, green], cyan),
+            ([orange, pink], Color(hex: 0x6349D9)),
+            ([indigo, pink], Color(hex: 0xB665EF)),
+            ([pink, orange], pink),
+            ([cyan, indigo], Color(hex: 0x3C75E8)),
+        ]
+        return solid.first { $0.0 == colors }?.1 ?? colors.first ?? indigo
+    }
+
     static let spring = Animation.spring(response: 0.4, dampingFraction: 0.8)
     static let snappy = Animation.spring(response: 0.28, dampingFraction: 0.65)
+
 
     /// Stable avatar colors for names and numbers.
     static func colors(for seed: String) -> [Color] {
         let palettes: [[Color]] = [[indigo, cyan], [pink, orange], [green, mint], [orange, pink], [cyan, indigo]]
         let hash = seed.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0xFFFF }
         return palettes[hash % palettes.count]
+    }
+}
+
+extension Color {
+    init(hex: UInt32) {
+        self.init(red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255, blue: Double(hex & 0xFF) / 255)
     }
 }
 
@@ -177,11 +212,8 @@ struct IconBadge: View {
             .foregroundStyle(.white)
             .symbolEffect(.pulse, isActive: pulsing)
             .frame(width: size, height: size)
-            .background(
-                LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing),
-                in: RoundedRectangle(cornerRadius: size * 0.3, style: .continuous)
-            )
-            .shadow(color: (colors.first ?? .clear).opacity(0.35), radius: 8, y: 3)
+            .background(Theme.badgeColor(colors), in: RoundedRectangle(cornerRadius: size * 0.3, style: .continuous))
+            .shadow(color: Theme.badgeColor(colors).opacity(0.35), radius: 8, y: 3)
     }
 }
 
@@ -210,7 +242,7 @@ struct ActionTile: View {
             .glass(18)
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.5)
+                    .strokeBorder(Theme.badgeColor(colors), lineWidth: 1.5)
                     .opacity(active ? 1 : 0)
             )
         }
@@ -232,9 +264,52 @@ struct Chip: View {
         .foregroundStyle(tint)
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
-        .background(.thinMaterial, in: Capsule())
-        .overlay(Capsule().strokeBorder(.white.opacity(0.08)))
+        .background(Theme.glassFill, in: Capsule())
+        .overlay(Capsule().strokeBorder(Theme.glassEdge))
     }
+}
+
+/// Figma's bordered button: white text on a faint glass fill (macOS's own bordered style
+/// looks disabled on the dark glass). A destructive one gets magenta text.
+struct GlassButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(configuration.role == .destructive ? Theme.cyan : .white)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(Theme.glassFill, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Theme.glassEdge))
+            .opacity(configuration.isPressed ? 0.7 : 1)
+            .contentShape(Rectangle())
+    }
+}
+
+extension ButtonStyle where Self == GlassButtonStyle {
+    static var glass: GlassButtonStyle { GlassButtonStyle() }
+}
+
+/// A settings row: icon and title on the left, the switch at the far right.
+struct RowToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 8) {
+            configuration.label.labelStyle(RowLabelStyle())
+            Spacer(minLength: 12)
+            Toggle("", isOn: configuration.$isOn).toggleStyle(.switch).labelsHidden()
+        }
+    }
+}
+
+private struct RowLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 8) {
+            configuration.icon.foregroundStyle(Theme.cyan).frame(width: 18)
+            configuration.title
+        }
+    }
+}
+
+extension ToggleStyle where Self == RowToggleStyle {
+    static var row: RowToggleStyle { RowToggleStyle() }
 }
 
 // MARK: - Indicators

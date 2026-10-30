@@ -92,7 +92,7 @@ struct NotificationControls: View {
                     }
                 }
             }
-            .toggleStyle(.switch)
+            .toggleStyle(.row)
         }
         .animation(Theme.spring, value: state.mutedApps)
     }

@@ -26,7 +26,12 @@ struct CallInfo: Equatable {
     var state: String
     var number: String?
     var name: String?
+    /// A second caller ringing while this call is on (call waiting).
+    var waitingNumber: String? = nil
+    var waitingName: String? = nil
     var display: String { name ?? number ?? "Unknown caller" }
+    var hasWaiting: Bool { waitingNumber != nil || waitingName != nil }
+    var waitingDisplay: String { waitingName ?? waitingNumber ?? "Unknown caller" }
 }
 
 struct MediaInfo: Equatable {
@@ -40,7 +45,11 @@ struct MediaInfo: Equatable {
 /// What the floating call panel shows: a call notification from any app, or the
 /// phone's own call state when no such notification is available.
 struct CallPanelModel: Equatable {
-    enum Kind { case accept, reject, neutral }
+    enum Kind {
+        case accept, reject, neutral
+        /// Panel order: answer first, end/decline last.
+        var order: Int { self == .accept ? 0 : self == .neutral ? 1 : 2 }
+    }
     enum Action: Equatable {
         case notification(key: String, index: Int)
         case telephony(String)
@@ -260,7 +269,12 @@ final class AppState: ObservableObject {
         }
         clipboard.onPrivateChange = { [weak self] in self?.unsyncedMacCopyAt = Date() }
         clipboard.start()
-        pasteInterceptor.shouldFetch = { [weak self] in self?.shouldFetchOnPaste ?? false }
+        pasteInterceptor.shouldFetch = { [weak self] in
+            guard let self else { return false }
+            // A copy made just before ⌘V may not have been noticed yet.
+            self.clipboard.poll()
+            return self.shouldFetchOnPaste
+        }
         pasteInterceptor.fetch = { [weak self] done in
             guard let self else { return done() }
             self.fetchPhoneClipboard(then: done)
@@ -400,7 +414,8 @@ final class AppState: ObservableObject {
             let requested = clipboardRequestedAt.map { Date().timeIntervalSince($0) < 10 } ?? false
             clipboardRequestedAt = nil
             guard clipboardSyncEnabled || requested else { return }
-            clipboard.setFromPhone(text)
+            // For ⌘V, only replace the Mac's copy with something new from the phone.
+            clipboard.setFromPhone(text, onlyIfNew: pasteFetchDone != nil)
             if let done = pasteFetchDone {
                 // Fetched for ⌘V, which goes through right after.
                 pasteFetchDone = nil
@@ -516,19 +531,32 @@ final class AppState: ObservableObject {
         let state = m.state ?? "idle"
         if state == "idle" {
             pendingCallerName = nil
-            if hiddenCallPanelID == "telephony" { hiddenCallPanelID = nil }
+            if hiddenCallPanelID == "telephony" || hiddenCallPanelID == "waiting" { hiddenCallPanelID = nil }
             speakerOn = false
             withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { call = nil }
             resetCallPanelIfNoCall()
             return
         }
         // Android may report the same state twice, the second time without a number.
-        let number = m.number ?? (call?.state == state ? call?.number : nil)
-        var name = m.name ?? contactName(for: number) ?? call?.name
+        var number = m.number ?? (call?.state == state ? call?.number : nil)
+        let sameCaller = number == nil || Self.numberKey(number!) == call?.number.flatMap(Self.numberKey)
+        var name = m.name ?? contactName(for: number) ?? (sameCaller ? call?.name : nil)
         if name == nil, let pending = pendingCallerName, Date().timeIntervalSince(pending.at) < 15 {
             name = pending.name
         }
-        let newCall = CallInfo(state: state, number: number, name: name)
+        var newState = state
+        var waitingNumber = m.waitingNumber
+        var waitingName = m.waitingName ?? contactName(for: m.waitingNumber)
+        // Android's plain call-state report (without the call companion) names whichever call
+        // changed last, so another number while on a call is a second caller, not the person
+        // you're talking to: keep the call as it was. (No waiting panel from these: the phone
+        // could only hang up its current call, not decline the second one.)
+        if m.telecom != true, let current = call, current.state == "offhook", !sameCaller {
+            (newState, number, name) = ("offhook", current.number, current.name)
+        }
+        let newCall = CallInfo(state: newState, number: number, name: name,
+                               waitingNumber: waitingNumber, waitingName: waitingName)
+        if !newCall.hasWaiting, hiddenCallPanelID == "waiting" { hiddenCallPanelID = nil }
         if call?.state != state { bluetooth.phoneReportedCall(state) }
         withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { call = newCall }
     }
@@ -562,8 +590,12 @@ final class AppState: ObservableObject {
             if let name { pendingCallerName = (name, Date()) }
             return
         }
-        guard call.name == nil, name != nil || call.number == nil else { return }
-        let updated = CallInfo(state: call.state, number: call.number ?? number, name: name)
+        // During a call, the dialer's notification may be about a second caller instead.
+        guard call.name == nil, !call.hasWaiting, call.state == "ringing" || call.number == nil,
+              name != nil || call.number == nil else { return }
+        var updated = call
+        updated.number = call.number ?? number
+        updated.name = name
         withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { self.call = updated }
     }
 
@@ -571,6 +603,15 @@ final class AppState: ObservableObject {
 
     var callPanel: CallPanelModel? {
         guard showCallsOnMac, !callPanelDismissed else { return nil }
+        // A second caller while on a call gets its own incoming panel; Answer puts the current
+        // call on hold, as on the phone.
+        if let call, call.hasWaiting, hiddenCallPanelID != "waiting" {
+            return CallPanelModel(id: "waiting", caller: call.waitingDisplay,
+                                  detail: "Incoming call · you're on a call with \(call.display)",
+                                  app: "Phone", icon: nil, incoming: true,
+                                  buttons: [.init(title: "Decline", kind: .reject, action: .telephony("decline")),
+                                            .init(title: "Answer", kind: .accept, action: .telephony("answer"))])
+        }
         // Regular calls with the Mac connected as a Bluetooth hands-free device get Mac audio controls.
         if bluetooth.isReady, hiddenCallPanelID != "telephony", let call = call ?? bluetoothCall {
             return bluetoothCallPanel(call)
@@ -654,7 +695,10 @@ final class AppState: ObservableObject {
 
     func performCallButton(_ button: CallPanelModel.Button) {
         callLog.notice("call button: \(button.title, privacy: .public)")
-        if button.kind == .reject, let id = callPanel?.id { closePanelForEndedCall(id) }
+        if button.kind == .reject, let id = callPanel?.id {
+            // Declining a waiting call leaves the current one on: back to its panel straight away.
+            if id == "waiting" { hiddenCallPanelID = "waiting" } else { closePanelForEndedCall(id) }
+        }
         switch button.action {
         case .notification(let key, let index): runAction(key, index: index)
         case .telephony(let action): callAction(action)
@@ -716,6 +760,8 @@ final class AppState: ObservableObject {
     func hideCallPanel(_ id: String) {
         callLog.notice("call panel closed with ✕ (\(id, privacy: .public))")
         hiddenCallPanelID = id
+        // Ignoring a waiting call shouldn't hide the call you're on.
+        if id == "waiting" { return }
         callPanelDismissed = true
     }
 

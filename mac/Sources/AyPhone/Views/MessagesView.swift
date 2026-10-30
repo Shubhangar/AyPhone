@@ -261,7 +261,7 @@ struct ComposeSheet: View {
                     state.sendSms(to: to, text: text)
                     dismiss()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.borderedProminent).tint(Theme.indigo)
                 .disabled(to.isEmpty || text.isEmpty)
             }
         }
