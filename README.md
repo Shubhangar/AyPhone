@@ -8,8 +8,8 @@ You need both apps:
 
 | | Download | Needs |
 |---|---|---|
-| **Mac** | [AyPhone-0.1.5-mac.dmg](https://github.com/Shubhangar/AyPhone/releases/download/v0.1.5/AyPhone-0.1.5-mac.dmg) | macOS 14 or later, Apple silicon or Intel |
-| **Android phone** | [AyPhone-0.1.5-android.apk](https://github.com/Shubhangar/AyPhone/releases/download/v0.1.5/AyPhone-0.1.5-android.apk) | Android 10 or later |
+| **Mac** | [AyPhone-0.1.6-mac.dmg](https://github.com/Shubhangar/AyPhone/releases/download/v0.1.6/AyPhone-0.1.6-mac.dmg) | macOS 14 or later, Apple silicon or Intel |
+| **Android phone** | [AyPhone-0.1.6-android.apk](https://github.com/Shubhangar/AyPhone/releases/download/v0.1.6/AyPhone-0.1.6-android.apk) | Android 10 or later |
 
 Then follow the **[installation guide](dist/INSTALL.md)**: drag the Mac app to Applications, install the APK on the phone, and pair by scanning the QR code on the Mac. All versions are on the [Releases page](https://github.com/Shubhangar/AyPhone/releases/latest).
 
