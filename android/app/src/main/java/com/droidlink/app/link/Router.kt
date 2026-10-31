@@ -6,6 +6,7 @@ import android.os.Looper
 import com.droidlink.app.Notifications
 import com.droidlink.app.feature.Apps
 import com.droidlink.app.feature.Battery
+import com.droidlink.app.feature.CallCompanionService
 import com.droidlink.app.feature.Calls
 import com.droidlink.app.feature.Contacts
 import com.droidlink.app.feature.ClipboardBridge
@@ -33,6 +34,7 @@ object Router {
         Battery.sendCurrent(ctx)
         PhoneNotificationListener.instance?.sendAll()
         Media.sendCurrent(force = true)
+        CallCompanionService.instance?.let { main.post { it.sendCurrent() } }
     }
 
     fun handle(m: JSONObject) {

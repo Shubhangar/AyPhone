@@ -9,7 +9,7 @@ struct MenuBarView: View {
         VStack(alignment: .leading, spacing: 12) {
             header
 
-            if let call = state.call {
+            if let call = state.currentCall {
                 HStack(spacing: 10) {
                     Avatar(name: call.display, size: 30)
                     VStack(alignment: .leading, spacing: 0) {
@@ -115,7 +115,7 @@ struct MenuBarView: View {
         })
         .background(PanelWindowReader { panel.window = $0 })
         .onPreferenceChange(PanelHeightKey.self) { panel.fit(height: $0) }
-        .animation(Theme.spring, value: state.call)
+        .animation(Theme.spring, value: state.currentCall)
         .animation(Theme.spring, value: state.connected)
     }
 

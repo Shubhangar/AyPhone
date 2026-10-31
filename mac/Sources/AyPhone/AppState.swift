@@ -764,7 +764,7 @@ final class AppState: ObservableObject {
         if bluetooth.isReady, hiddenCallPanelID != "telephony", let call = call ?? bluetoothCall {
             return bluetoothCallPanel(call)
         }
-        if let n = notifications.first(where: { $0.isCall && !isMuted($0.pkg) }) {
+        if let n = callNotification {
             guard n.key != hiddenCallPanelID else { return nil }
             var buttons = n.actions.enumerated().filter { !$0.element.isEmpty }.map { i, title in
                 CallPanelModel.Button(title: title, kind: CallPanelModel.kind(for: title),
@@ -800,11 +800,28 @@ final class AppState: ObservableObject {
         .init(title: speakerOn ? "Speaker off" : "Speaker", kind: .neutral, action: .telephony("speaker"))
     }
 
-    /// A call known only from the Bluetooth link (the Wi-Fi/USB link may be down).
+    /// A call known only from the Bluetooth link (the Wi-Fi/USB link may be down, or it's a
+    /// WhatsApp-style call, which the phone doesn't report as a phone call). Bluetooth carries no
+    /// name, and none at all for app calls: the call's notification has it.
     private var bluetoothCall: CallInfo? {
         guard bluetooth.ringing || bluetooth.callActive else { return nil }
         let number = bluetooth.callerNumber
-        return CallInfo(state: bluetooth.ringing ? "ringing" : "offhook", number: number, name: contactName(for: number))
+        let name = contactName(for: number) ?? (number == nil ? callNotification?.title.nonEmpty : nil)
+        return CallInfo(state: bluetooth.ringing ? "ringing" : "offhook", number: number, name: name)
+    }
+
+    /// The notification of a call in progress or ringing (dialer, WhatsApp…).
+    private var callNotification: PhoneNotification? {
+        notifications.first { $0.isCall && !isMuted($0.pkg) }
+    }
+
+    /// The call to show in the menu bar: a phone call, one known over Bluetooth, or an app call
+    /// known only from its notification.
+    var currentCall: CallInfo? {
+        if let call { return call }
+        if let bluetoothCall { return bluetoothCall }
+        guard let n = callNotification else { return nil }
+        return CallInfo(state: n.incomingCall ? "ringing" : "offhook", number: nil, name: n.title.nonEmpty ?? n.app)
     }
 
     private func bluetoothCallPanel(_ call: CallInfo) -> CallPanelModel {

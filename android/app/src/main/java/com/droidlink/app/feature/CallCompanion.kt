@@ -100,6 +100,13 @@ class CallCompanionService : InCallService() {
         Link.send(msg("callMute").put("on", audioState.isMuted))
     }
 
+    /** Catches a Mac that connects mid-call up on the calls, speaker and mute. */
+    fun sendCurrent() {
+        lastReport = null
+        reportCalls()
+        callAudioState?.let(::onCallAudioStateChanged)
+    }
+
     /** The last `call` message sent, so repeated details updates don't resend it. */
     private var lastReport: String? = null
 
