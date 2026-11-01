@@ -9,6 +9,7 @@ import android.net.ConnectivityManager
 import android.os.SystemClock
 import android.os.Build
 import android.provider.Settings
+import android.util.Base64
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.droidlink.app.Notifications
@@ -66,6 +67,7 @@ object Link {
     private const val USB_HOST = "127.0.0.1"
     private const val BLUETOOTH = "bluetooth"
     private const val QUICK_BLUETOOTH_RETRIES = 4
+    private const val SLOW_BLUETOOTH_RETRY = 10 * 60_000L
     /** The Mac's "AyPhone" Bluetooth service (must match BluetoothLinkServer.serviceUUID on the Mac). */
     private val BLUETOOTH_SERVICE: UUID = UUID.fromString("6f3c1a52-8b7e-4d2a-9c1e-5a7f0b3d2e91")
 
@@ -84,7 +86,12 @@ object Link {
     /** Hosts that accepted a connection but failed the pairing handshake (another computer), with when. */
     private val rejected = HashMap<String, Long>()
     private var lastScan = 0L
-    private var lastBluetoothTry = 0L
+    /** When Bluetooth may be tried next (see [connect]). */
+    private var nextBluetoothTry = 0L
+    /** Bluetooth attempts that found no Mac in a row. */
+    private var bluetoothFailures = 0
+    /** The Mac said it's going to sleep; cleared when it's back. */
+    @Volatile private var macAsleep = false
     /** Quick Bluetooth retries left after a link that dropped right away (see [run]). */
     private var bluetoothQuickRetries = QUICK_BLUETOOTH_RETRIES
 
@@ -203,7 +210,7 @@ object Link {
                     // seconds, so retry soon rather than waiting out the usual minute.
                     if (SystemClock.elapsedRealtime() - openedAt < 10_000 && bluetoothQuickRetries > 0) {
                         bluetoothQuickRetries--
-                        lastBluetoothTry = SystemClock.elapsedRealtime() - 60_000 + 8_000
+                        nextBluetoothTry = SystemClock.elapsedRealtime() + 8_000
                     } else if (authenticated) {
                         bluetoothQuickRetries = QUICK_BLUETOOTH_RETRIES
                     }
@@ -243,10 +250,14 @@ object Link {
             }
         }
         // Bluetooth attempts make the phone and Mac connect and disconnect at the radio level
-        // (visible in Bluetooth settings), so try at most once a minute.
-        if (now - lastBluetoothTry < 60_000) return null
-        lastBluetoothTry = now
-        return openBluetooth(p)
+        // (visible in Bluetooth settings), and each one wakes a sleeping Mac. So at most once a
+        // minute, and only every 10 minutes while the Mac is asleep or away.
+        if (now < nextBluetoothTry) return null
+        val found = openBluetooth(p)
+        bluetoothFailures = if (found == null) bluetoothFailures + 1 else 0
+        val slow = macAsleep || bluetoothFailures >= 5
+        nextBluetoothTry = now + if (slow) SLOW_BLUETOOTH_RETRY else 60_000
+        return found
     }
 
     private fun open(host: String, port: Int, timeoutMs: Int): Conn? = try {
@@ -331,13 +342,32 @@ object Link {
         }.awaitAll().filterNotNull()
     }
 
+    private fun readFrame(input: DataInputStream): ByteArray {
+        val len = input.readInt()
+        if (len <= 28 || len > MAX_FRAME) throw IOException("bad frame length $len")
+        return ByteArray(len).also(input::readFully)
+    }
+
     private fun session(link: Conn, p: PairingInfo, onAuthenticated: () -> Unit) {
-        val c = LinkCrypto(p.key)
         val input = DataInputStream(BufferedInputStream(link.input, 64 * 1024))
+        val output = DataOutputStream(BufferedOutputStream(link.output, 64 * 1024))
+        synchronized(writeLock) { conn = link.closer }
+        // The pairing key only opens a session: both sides add a random nonce, and everything
+        // after uses a key made from them, so frames recorded from another connection (by
+        // someone on the same Wi-Fi, or a fake Mac replaying them) don't open.
+        val pairingCrypto = LinkCrypto(p.key)
+        val phoneNonce = LinkCrypto.randomNonce()
+        val auth = pairingCrypto.seal(msg("auth").put("nonce", Base64.encodeToString(phoneNonce, Base64.NO_WRAP)).toString().toByteArray())
+        output.writeInt(auth.size)
+        output.write(auth)
+        output.flush()
+        val reply = JSONObject(String(pairingCrypto.open(readFrame(input)), Charsets.UTF_8))
+        val macNonce = Base64.decode(reply.optString("nonce"), Base64.DEFAULT)
+        if (reply.optString("type") != "authOk" || macNonce.size != LinkCrypto.SESSION_NONCE) throw IOException("bad authOk")
+        val c = SessionCrypto(p.key, phoneNonce, macNonce)
         synchronized(writeLock) {
-            conn = link.closer
             crypto = c
-            out = DataOutputStream(BufferedOutputStream(link.output, 64 * 1024))
+            out = output
         }
         sendNow(
             msg("hello")
@@ -364,17 +394,22 @@ object Link {
         } else null
         try {
             while (true) {
-                val len = input.readInt()
-                if (len <= 28 || len > MAX_FRAME) throw IOException("bad frame length $len")
-                val box = ByteArray(len)
-                input.readFully(box)
-                val json = JSONObject(String(c.open(box), Charsets.UTF_8))
+                val json = JSONObject(String(c.open(readFrame(input)), Charsets.UTF_8))
                 if (json.optString("type") == "helloOk") {
+                    macAsleep = false
+                    bluetoothFailures = 0
                     macName.value = json.optString("name", p.macName)
                     macModel.value = json.optString("model").ifEmpty { null }
                     state.value = State.Connected
                     onAuthenticated()
                     Router.onConnected()
+                    continue
+                }
+                if (json.optString("type") == "macSleep") {
+                    // The lid closed: the link is about to drop. Don't keep calling the Mac over
+                    // Bluetooth, which wakes it each time; Wi-Fi brings it back when it wakes.
+                    macAsleep = true
+                    nextBluetoothTry = SystemClock.elapsedRealtime() + SLOW_BLUETOOTH_RETRY
                     continue
                 }
                 if (json.optString("type") == "macMuted") {

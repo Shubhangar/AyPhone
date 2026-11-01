@@ -365,6 +365,13 @@ final class AppState: ObservableObject {
             MainActor.assumeIsolated { self?.didWake() }
         }
 
+        // Tell the phone, so it doesn't keep calling over Bluetooth: each try wakes a sleeping Mac.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.willSleepNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.server.send(Msg("macSleep")) }
+        }
+
         // The phone pings every 15s, but Android pauses it in deep sleep (screen off, idle) and
         // the pings stop while the link itself is fine. So when it goes quiet, ping it: incoming
         // data wakes the phone and it answers. Only a phone that misses several pings is gone.

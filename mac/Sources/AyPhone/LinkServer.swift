@@ -18,9 +18,13 @@ final class LinkServer {
     /// Localhost only, no Bonjour: the Bluetooth helper's end.
     private let loopbackOnly: Bool
     private var listener: NWListener?
-    /// The authenticated phone connection. New sockets stay pending until their
-    /// first frame decrypts to a `hello`.
+    /// The authenticated phone connection. A new socket first proves it has the pairing key
+    /// (`auth`, answered with `authOk`), then stays pending until its first frame under the
+    /// session key, the phone's `hello`, arrives. A replayed `auth` gets nowhere and doesn't
+    /// push the real phone off.
     private var connection: NWConnection?
+    private var session: LinkSession?
+    private var pending: [ObjectIdentifier: LinkSession] = [:]
 
     var isConnected: Bool { connection != nil }
 
@@ -84,21 +88,23 @@ final class LinkServer {
     }
 
     func send(_ msg: Msg, completion: (() -> Void)? = nil) {
-        guard let conn = connection else { completion?(); return }
+        guard let conn = connection, let session else { completion?(); return }
         do {
-            let json = try JSONEncoder().encode(msg)
-            let box = try LinkCrypto.seal(json, key: key)
-            var frame = Data(capacity: box.count + 4)
-            var len = UInt32(box.count).bigEndian
-            withUnsafeBytes(of: &len) { frame.append(contentsOf: $0) }
-            frame.append(box)
-            conn.send(content: frame, completion: .contentProcessed { _ in
-                MainActor.assumeIsolated { completion?() }
-            })
+            write(try session.seal(try JSONEncoder().encode(msg)), to: conn, completion: completion)
         } catch {
             NSLog("AyPhone send failed: \(error)")
             completion?()
         }
+    }
+
+    private func write(_ box: Data, to conn: NWConnection, completion: (() -> Void)? = nil) {
+        var frame = Data(capacity: box.count + 4)
+        var len = UInt32(box.count).bigEndian
+        withUnsafeBytes(of: &len) { frame.append(contentsOf: $0) }
+        frame.append(box)
+        conn.send(content: frame, completion: .contentProcessed { _ in
+            MainActor.assumeIsolated { completion?() }
+        })
     }
 
     // MARK: - Connection handling
@@ -118,8 +124,10 @@ final class LinkServer {
     }
 
     private func dropped(_ conn: NWConnection) {
+        pending[ObjectIdentifier(conn)] = nil
         guard conn === connection else { return }
         connection = nil
+        session = nil
         onConnectionChange(false)
     }
 
@@ -143,14 +151,33 @@ final class LinkServer {
     }
 
     private func handleFrame(_ body: Data, from conn: NWConnection) -> Bool {
-        guard let plain = try? LinkCrypto.open(body, key: key),
-              let msg = try? JSONDecoder().decode(Msg.self, from: plain) else {
-            // Wrong key or garbage: not one of our phones.
+        let id = ObjectIdentifier(conn)
+        // The current phone and pending ones speak with their session key; a new socket starts
+        // with the pairing key.
+        let sessionForConn = conn === connection ? session : pending[id]
+        let opened: Data? = sessionForConn.map { try? $0.open(body) } ?? (try? LinkCrypto.open(body, key: key))
+        guard let plain = opened, let msg = try? JSONDecoder().decode(Msg.self, from: plain) else {
+            // Wrong key, garbage, or a repeated or recorded frame: not one of our phones.
             conn.cancel()
             return false
         }
+        if sessionForConn == nil {
+            // The pairing key only opens a session: a fresh one for each connection, so frames
+            // recorded from an earlier one don't open here.
+            guard msg.type == "auth", let phoneNonce = msg.nonce.flatMap({ Data(base64Encoded: $0) }),
+                  phoneNonce.count == LinkSession.nonceSize,
+                  pending.count < 8 else { conn.cancel(); return false }
+            let macNonce = LinkSession.randomNonce()
+            var ok = Msg("authOk"); ok.nonce = macNonce.base64EncodedString()
+            guard let json = try? JSONEncoder().encode(ok), let box = try? LinkCrypto.seal(json, key: key) else {
+                conn.cancel(); return false
+            }
+            pending[id] = LinkSession(pairingKey: key, phoneNonce: phoneNonce, macNonce: macNonce)
+            write(box, to: conn)
+            return true
+        }
         if conn !== connection {
-            guard msg.type == "hello" else { conn.cancel(); return false }
+            guard msg.type == "hello", let newSession = pending.removeValue(forKey: id) else { conn.cancel(); return false }
             let previous = connection
             if previous != nil {
                 // Clear everything from the old session (its notifications, a ringing call…);
@@ -159,6 +186,7 @@ final class LinkServer {
                 onConnectionChange(false)
             }
             connection = conn
+            session = newSession
             previous?.cancel()
             onConnectionChange(true)
         }

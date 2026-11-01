@@ -8,7 +8,7 @@ The Mac app is the **server**, the Android app is the **client**.
 - Wi-Fi: the Mac advertises the Bonjour service `_droidlink._tcp`; the phone also remembers the IPs from the pairing QR code.
 - USB: the Mac runs `adb reverse tcp:47800 tcp:47800`, and the phone always tries `127.0.0.1:47800` first.
 - Finding the Mac on networks that block Bonjour: every 3 s while disconnected, the Mac broadcasts `AYPHONE1 47800 <Mac name>` on UDP port `47801`; the phone also retries addresses it connected to before, then probes its /24 subnet.
-- Bluetooth fallback (Wi-Fi with client isolation, no cable): an RFCOMM service with UUID `6f3c1a52-8b7e-4d2a-9c1e-5a7f0b3d2e91` (the phone finds the channel by SDP lookup). It is published by the `AyPhoneBluetooth` helper inside the app bundle, which relays bytes to the app's localhost-only listener on `127.0.0.1:47802`; the helper has to be a separate process because inside the app macOS hands incoming channels from the phone to the hands-free (calls) connection. Framing, encryption and the hello are the same as over TCP. The phone tries Bluetooth last, at most once a minute (sooner after a link that drops right away), and leaves it as soon as USB or Wi-Fi works again.
+- Bluetooth fallback (Wi-Fi with client isolation, no cable): an RFCOMM service with UUID `6f3c1a52-8b7e-4d2a-9c1e-5a7f0b3d2e91` (the phone finds the channel by SDP lookup). It is published by the `AyPhoneBluetooth` helper inside the app bundle, which relays bytes to the app's localhost-only listener on `127.0.0.1:47802`; the helper has to be a separate process because inside the app macOS hands incoming channels from the phone to the hands-free (calls) connection. Framing, encryption and the handshake are the same as over TCP. The phone tries Bluetooth last, at most once a minute (sooner after a link that drops right away; every 10 minutes after the Mac says it's going to sleep or after five tries in a row find nothing), and leaves it as soon as USB or Wi-Fi works again.
 
 ## Pairing
 
@@ -28,17 +28,30 @@ Each frame is:
 [u32 big-endian length][12-byte nonce][AES-256-GCM ciphertext][16-byte tag]
 ```
 
-`length` counts everything after the length field. The plaintext is one UTF-8 JSON object with a `type` field. If a frame does not decrypt, the connection is closed. The first frame from the phone must be `hello`.
+`length` counts everything after the length field. The plaintext is one UTF-8 JSON object with a `type` field. If a frame does not decrypt, the connection is closed.
+
+### Session handshake
+
+The pairing key only opens a session, so frames recorded from one connection can't be replayed into another:
+
+1. The phone sends `auth` with `nonce` (16 random bytes, base64), sealed with the pairing key and a random GCM nonce.
+2. The Mac answers `authOk` with its own 16-byte `nonce`, sealed the same way.
+3. Both derive the session key: HKDF-SHA256 with the pairing key as input, `phoneNonce ‖ macNonce` as salt, info `AyPhone session`, 32 bytes.
+4. Every later frame uses the session key, with a counter for its GCM nonce instead of a random one: byte 0 is the direction (`0x50` phone→Mac, `0x4D` Mac→phone), bytes 1-3 are zero, bytes 4-11 are a big-endian counter starting at 0 for each direction. A frame whose nonce isn't the next expected one is refused and the connection closed.
+5. The phone's first session frame is `hello`. Only then does the Mac drop any previous phone connection and switch to this one, so a replayed `auth` can't push the real phone off.
 
 ## Messages
 
 | type | direction | fields |
 |---|---|---|
+| `auth` | A→M | `nonce`: see Session handshake (pairing key) |
+| `authOk` | M→A | `nonce`: see Session handshake (pairing key) |
 | `hello` | A→M | `name`, `model`, `id` |
 | `helloOk` | M→A | `name`, `model` ("MacBook Pro"…) |
 | `ping` / `pong` | both | |
 | `battery` | A→M | `level` (0-100), `charging` |
 | `macBattery` | M→A | `level` (0-100), `charging`: the Mac's battery, on connect and when it changes (not sent by Macs without one) |
+| `macSleep` | M→A | The Mac is going to sleep: the phone tries Bluetooth only every 10 minutes until it's back (each Bluetooth attempt wakes a sleeping Mac) |
 | `macMuted` | M→A | `on`: whether the Mac's sound is muted, on connect and after `macMute` |
 | `macMute` | A→M | `on`: mute or unmute the Mac's sound |
 | `mirrorRequest` | A→M | `on`: start (`true`) or stop screen mirroring from the phone |

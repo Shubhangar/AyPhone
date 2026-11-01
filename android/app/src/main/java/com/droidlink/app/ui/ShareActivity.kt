@@ -25,7 +25,7 @@ class ShareActivity : Activity() {
             Intent.ACTION_SEND_MULTIPLE ->
                 IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
             else -> emptyList()
-        }
+        }.filter(::isSafeToSend)
         if (uris.isNotEmpty()) {
             val files = FileSender.prepare(this, uris)
             FileSender.send(files)
@@ -46,6 +46,14 @@ class ShareActivity : Activity() {
         }
         finish()
     }
+
+    /**
+     * Any app can open this screen, so only send what it could share itself: content from other
+     * apps. Not file:// paths or AyPhone's own files, which AyPhone can read but the sender
+     * shouldn't (its pairing key, for one).
+     */
+    private fun isSafeToSend(uri: Uri): Boolean =
+        uri.scheme == "content" && uri.authority?.startsWith(packageName) != true
 
     private fun toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
 }

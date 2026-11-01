@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import Security
 
 /// One wire message. A flat struct with optional fields keeps the JSON trivial to
 /// produce and parse on Android (see PROTOCOL.md). Nil fields are omitted when encoding.
@@ -8,6 +9,8 @@ struct Msg: Codable {
 
     var id: String?
     var key: String?
+    /// auth / authOk: each side's random contribution to the session key (base64).
+    var nonce: String?
     var name: String?
     var model: String?
 
@@ -136,12 +139,67 @@ enum LinkCrypto {
     }
 }
 
+/// One connection's encryption. Its key comes from the pairing key and both sides' random
+/// nonces, so it's new every time. Nonces are a direction byte and a counter, and each frame
+/// must carry the next one: a frame repeated within the session is refused too.
+final class LinkSession {
+    static let nonceSize = 16
+    private static let fromMac: UInt8 = 0x4D, fromPhone: UInt8 = 0x50
+
+    private let key: SymmetricKey
+    private var sent: UInt64 = 0
+    private var received: UInt64 = 0
+
+    init(pairingKey: SymmetricKey, phoneNonce: Data, macNonce: Data) {
+        key = HKDF<SHA256>.deriveKey(inputKeyMaterial: pairingKey, salt: phoneNonce + macNonce,
+                                     info: Data("AyPhone session".utf8), outputByteCount: 32)
+    }
+
+    static func randomNonce() -> Data {
+        var bytes = [UInt8](repeating: 0, count: nonceSize)
+        _ = SecRandomCopyBytes(kSecRandomDefault, nonceSize, &bytes)
+        return Data(bytes)
+    }
+
+    func seal(_ plain: Data) throws -> Data {
+        let nonce = try AES.GCM.Nonce(data: Self.nonce(Self.fromMac, sent))
+        sent += 1
+        return try AES.GCM.seal(plain, using: key, nonce: nonce).combined!
+    }
+
+    func open(_ box: Data) throws -> Data {
+        guard box.count > 12, box.prefix(12) == Self.nonce(Self.fromPhone, received) else {
+            throw CryptoKitError.authenticationFailure
+        }
+        let plain = try LinkCrypto.open(box, key: key)
+        received += 1
+        return plain
+    }
+
+    private static func nonce(_ direction: UInt8, _ counter: UInt64) -> Data {
+        var data = Data([direction, 0, 0, 0])
+        withUnsafeBytes(of: counter.bigEndian) { data.append(contentsOf: $0) }
+        return data
+    }
+}
+
 /// The pairing key shared with the phone through the QR code.
+/// Kept in the login Keychain, where other apps can't read it (earlier versions kept it in
+/// AyPhone's preferences file; it moves over on first launch, so the phone stays paired).
 enum Pairing {
     private static let defaultsKey = "pairingKey"
+    private static let keychainQuery: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: "com.ayphone.mac.pairing",
+        kSecAttrAccount as String: "pairingKey",
+    ]
 
     static func loadOrCreateKey() -> SymmetricKey {
+        if let data = readKeychain() {
+            return SymmetricKey(data: data)
+        }
         if let b64 = UserDefaults.standard.string(forKey: defaultsKey), let data = Data(base64Encoded: b64) {
+            if saveKeychain(data) { UserDefaults.standard.removeObject(forKey: defaultsKey) }
             return SymmetricKey(data: data)
         }
         return resetKey()
@@ -151,8 +209,30 @@ enum Pairing {
     static func resetKey() -> SymmetricKey {
         let key = SymmetricKey(size: .bits256)
         let data = key.withUnsafeBytes { Data($0) }
-        UserDefaults.standard.set(data.base64EncodedString(), forKey: defaultsKey)
+        if saveKeychain(data) {
+            UserDefaults.standard.removeObject(forKey: defaultsKey)
+        } else {
+            // No Keychain (it shouldn't happen): better a working pairing than none.
+            UserDefaults.standard.set(data.base64EncodedString(), forKey: defaultsKey)
+        }
         return key
+    }
+
+    private static func readKeychain() -> Data? {
+        var query = keychainQuery
+        query[kSecReturnData as String] = true
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess else { return nil }
+        return result as? Data
+    }
+
+    private static func saveKeychain(_ data: Data) -> Bool {
+        let update = [kSecValueData as String: data] as CFDictionary
+        if SecItemUpdate(keychainQuery as CFDictionary, update) == errSecSuccess { return true }
+        var item = keychainQuery
+        item[kSecValueData as String] = data
+        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
     }
 
     static func qrPayload(key: SymmetricKey, port: UInt16) -> String {

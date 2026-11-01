@@ -97,6 +97,7 @@ final class FileTransfers: ObservableObject {
         case "fileOffer":
             let url = uniqueDownloadURL(for: m.name ?? "file")
             FileManager.default.createFile(atPath: url.path, contents: nil)
+            Self.quarantine(url)
             guard let handle = try? FileHandle(forWritingTo: url) else { return }
             incoming[id] = handle
             if m.glow == true { glowing.insert(id) }
@@ -137,8 +138,17 @@ final class FileTransfers: ObservableObject {
         change(&transfers[i])
     }
 
+    /// Marks a file as downloaded, like a browser does: macOS checks an app or script from the
+    /// phone before it first opens, instead of running it straight away.
+    private static func quarantine(_ url: URL) {
+        let value = "0083;\(String(UInt32(Date().timeIntervalSince1970), radix: 16));AyPhone;"
+        _ = value.withCString { setxattr(url.path, "com.apple.quarantine", $0, strlen($0), 0, 0) }
+    }
+
     private func uniqueDownloadURL(for rawName: String) -> URL {
-        let name = (rawName as NSString).lastPathComponent.replacingOccurrences(of: ":", with: "-")
+        // Just a name: no folders, and nothing hidden or "..".
+        var name = (rawName as NSString).lastPathComponent.replacingOccurrences(of: ":", with: "-")
+        while name.hasPrefix(".") { name.removeFirst() }
         let dir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
         var url = dir.appendingPathComponent(name.isEmpty ? "file" : name)
         let base = url.deletingPathExtension().lastPathComponent
