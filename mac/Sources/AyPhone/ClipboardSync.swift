@@ -43,6 +43,15 @@ final class ClipboardSync {
         let pb = NSPasteboard.general
         guard pb.changeCount != lastChangeCount else { return }
         lastChangeCount = pb.changeCount
+        offer(pb)
+    }
+
+    /// Offers what's on the pasteboard now again, e.g. a copy made while the phone was away.
+    func resendCurrent() {
+        offer(NSPasteboard.general)
+    }
+
+    private func offer(_ pb: NSPasteboard) {
         // Skip password managers that mark entries as concealed or transient.
         let types = pb.types ?? []
         if types.contains(NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")) ||

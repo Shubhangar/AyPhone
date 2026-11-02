@@ -297,8 +297,12 @@ object Link {
         }.distinct().filter { it !in rejected }
         skipUsbOnce = false
         for (host in candidates) {
-            open(host, p.port, if (host == USB_HOST) 600 else 2_000)?.let { return it }
+            open(host, p.port, if (host == USB_HOST) 600 else 2_000)?.let {
+                Log.i(TAG, "reached $host")
+                return it
+            }
         }
+        Log.i(TAG, "no answer from ${candidates.joinToString()}")
         if (now - lastScan > 30_000) {
             lastScan = now
             for (host in scanSubnet(p.port)) {

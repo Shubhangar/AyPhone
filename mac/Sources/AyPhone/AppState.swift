@@ -206,6 +206,9 @@ final class AppState: ObservableObject {
     private var phoneUnlockedAt = Date.distantPast
     /// The last Mac copy the phone didn't get (sync off, disconnected, or a password).
     private var unsyncedMacCopyAt = Date.distantPast
+    /// A Mac copy made while the phone was away (or only on Bluetooth, for images): sent when
+    /// it's back. Cleared by a private copy, which mustn't go.
+    private var copyWaitingForPhone = false
     /// Waiting for the phone's clipboard before letting ⌘V through.
     private var pasteFetchDone: (() -> Void)?
     private var pasteFetchID = 0
@@ -310,8 +313,10 @@ final class AppState: ObservableObject {
             guard let self else { return }
             guard self.connected, self.clipboardSyncEnabled else {
                 self.unsyncedMacCopyAt = Date()
+                self.copyWaitingForPhone = self.clipboardSyncEnabled
                 return
             }
+            self.copyWaitingForPhone = false
             var m = Msg("clipboard"); m.text = text
             self.server.send(m)
         }
@@ -319,12 +324,17 @@ final class AppState: ObservableObject {
             guard let self else { return }
             guard self.connected, self.clipboardSyncEnabled, !self.server.isBluetooth else {
                 self.unsyncedMacCopyAt = Date()
+                self.copyWaitingForPhone = self.clipboardSyncEnabled
                 return
             }
+            self.copyWaitingForPhone = false
             var m = Msg("clipboardImage"); m.data = data.base64EncodedString(); m.mime = mime
             self.server.send(m)
         }
-        clipboard.onPrivateChange = { [weak self] in self?.unsyncedMacCopyAt = Date() }
+        clipboard.onPrivateChange = { [weak self] in
+            self?.unsyncedMacCopyAt = Date()
+            self?.copyWaitingForPhone = false
+        }
         clipboard.start()
         pasteInterceptor.shouldFetch = { [weak self] in
             guard let self else { return false }
@@ -525,6 +535,11 @@ final class AppState: ObservableObject {
             server.send(ok)
             sendMacBattery(force: true)
             sendMacMuted()
+            // Something copied while the phone was away: it gets it now.
+            if copyWaitingForPhone && clipboardSyncEnabled {
+                clipboard.resendCurrent()
+                if !copyWaitingForPhone { unsyncedMacCopyAt = .distantPast }
+            }
             server.send(Msg("getContacts"))
             requestThreads()
             // The app list (with icons) is heavy; it loads once Wi-Fi or USB is back.
