@@ -1,8 +1,5 @@
 package com.droidlink.app.ui
 
-import android.animation.Animator
-import android.animation.AnimatorListenerAdapter
-import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
@@ -18,10 +15,10 @@ import android.graphics.Shader
 import android.graphics.SweepGradient
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.View
 import android.view.WindowManager
-import android.view.animation.LinearInterpolator
 import kotlin.math.pow
 
 /**
@@ -58,30 +55,26 @@ object TransferGlow {
                 return@post
             }
             val total = (if (receiving) 3.1f else 3.0f) + 1.6f
-            // Whatever happens to the animation (the screen turning off midway…), take it down.
-            Handler(Looper.getMainLooper()).postDelayed({
+            // The view draws itself from the clock (not an animator, which the system's animation
+            // settings and power saving can slow or stall), and is taken down when it's done.
+            val remove = {
                 if (view.isAttachedToWindow) try { wm.removeView(view) } catch (_: Exception) {}
                 showing = false
-            }, (total * 1000).toLong() + 1500)
-            ValueAnimator.ofFloat(0f, total).apply {
-                duration = (total * 1000).toLong()
-                interpolator = LinearInterpolator()
-                addUpdateListener { view.time = it.animatedValue as Float; view.invalidate() }
-                addListener(object : AnimatorListenerAdapter() {
-                    override fun onAnimationEnd(animation: Animator) {
-                        try { wm.removeView(view) } catch (_: Exception) {}
-                        showing = false
-                    }
-                })
-                start()
             }
+            view.onDone = { Handler(Looper.getMainLooper()).post(remove) }
+            // Whatever happens (the screen turning off midway…), take it down.
+            Handler(Looper.getMainLooper()).postDelayed(remove, (total * 1000).toLong() + 1500)
         }
     }
 
     @SuppressLint("ViewConstructor")
     private class GlowView(ctx: Context, val receiving: Boolean) : View(ctx) {
         /** Seconds since the start. */
-        var time = 0f
+        private var time = 0f
+        private var startedAt = 0L
+        /** Called once the drop-down has gone. */
+        var onDone: () -> Unit = {}
+        private val end = (if (receiving) 3.1f else 3.0f) + 1.6f
         /** When the glow itself has faded; the drop-down follows. */
         private val total = if (receiving) 3.1f else 3.0f
         private val density = ctx.resources.displayMetrics.density
@@ -128,6 +121,14 @@ object TransferGlow {
         }
 
         override fun onDraw(canvas: Canvas) {
+            val now = SystemClock.uptimeMillis()
+            if (startedAt == 0L) startedAt = now
+            time = (now - startedAt) / 1000f
+            if (time >= end) {
+                onDone()
+                return
+            }
+            postInvalidateOnAnimation()
             val w = width.toFloat()
             val h = height.toFloat()
             val sweep = SweepGradient(w / 2, h / 2, colors, null)

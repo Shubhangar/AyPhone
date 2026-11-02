@@ -290,12 +290,25 @@ object Link {
     private suspend fun connect(p: PairingInfo): Conn? {
         val now = SystemClock.elapsedRealtime()
         rejected.entries.removeAll { now - it.value > 10 * 60_000 }
+        // Addresses from other networks (home, when at the office) can't answer: each would
+        // cost its 2-second timeout. (Unknown network: try them all.)
+        val subnet = ownSubnet()
         val candidates = buildList {
             if (!skipUsbOnce) add(USB_HOST)
             discoveredHost?.let(::add)
-            addAll(p.hosts)
+            addAll(p.hosts.filter { subnet == null || it.startsWith(subnet) })
         }.distinct().filter { it !in rejected }
         skipUsbOnce = false
+        // The Mac just announced itself from there: it's waking up, give it a few tries.
+        val heard = discoveredHost?.takeIf { now - lastBeaconAt < 10_000 && it !in rejected }
+        if (heard != null) {
+            repeat(2) {
+                open(heard, p.port, 1_500)?.let {
+                    Log.i(TAG, "reached $heard")
+                    return it
+                }
+            }
+        }
         for (host in candidates) {
             open(host, p.port, if (host == USB_HOST) 600 else 2_000)?.let {
                 Log.i(TAG, "reached $host")
@@ -383,6 +396,14 @@ object Link {
                 false
             }
         }
+    }
+
+    /** The phone's own Wi-Fi network as an address prefix ("192.168.10."), if it's on one. */
+    private fun ownSubnet(): String? {
+        val cm = context.getSystemService(ConnectivityManager::class.java)
+        val own = cm.getLinkProperties(cm.activeNetwork)?.linkAddresses
+            ?.map { it.address }?.firstOrNull { it is Inet4Address && !it.isLoopbackAddress } ?: return null
+        return own.hostAddress?.substringBeforeLast('.')?.plus('.')
     }
 
     /** Every address on the phone's /24 that has AyPhone's port open (about 2 seconds, in parallel). */

@@ -29,8 +29,14 @@ final class Beacon {
         }
     }
 
-    /// Announces right away (e.g. on waking) instead of at the next tick.
-    func sendNow() { tick() }
+    /// Announces right away and then every second for a while (on waking: the first may go out
+    /// before Wi-Fi is back, and a dozing phone can miss one), instead of every 3 seconds.
+    func sendNow() {
+        tick()
+        for second in 1...15 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(second)) { [weak self] in self?.tick() }
+        }
+    }
 
     private func tick() {
         guard shouldSend() else { return }
