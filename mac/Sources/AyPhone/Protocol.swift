@@ -184,22 +184,18 @@ final class LinkSession {
 }
 
 /// The pairing key shared with the phone through the QR code.
-/// Kept in the login Keychain, where other apps can't read it (earlier versions kept it in
-/// AyPhone's preferences file; it moves over on first launch, so the phone stays paired).
+/// Kept in AyPhone's preferences. (0.1.7 kept it in the login Keychain, but without an Apple
+/// developer ID the Keychain treats every update as a different app and stops AyPhone at launch
+/// with a password prompt. It moves back here once.)
 enum Pairing {
     private static let defaultsKey = "pairingKey"
-    private static let keychainQuery: [String: Any] = [
-        kSecClass as String: kSecClassGenericPassword,
-        kSecAttrService as String: "com.ayphone.mac.pairing",
-        kSecAttrAccount as String: "pairingKey",
-    ]
 
     static func loadOrCreateKey() -> SymmetricKey {
-        if let data = readKeychain() {
+        if let b64 = UserDefaults.standard.string(forKey: defaultsKey), let data = Data(base64Encoded: b64) {
             return SymmetricKey(data: data)
         }
-        if let b64 = UserDefaults.standard.string(forKey: defaultsKey), let data = Data(base64Encoded: b64) {
-            if saveKeychain(data) { UserDefaults.standard.removeObject(forKey: defaultsKey) }
+        if let data = takeFromKeychain() {
+            UserDefaults.standard.set(data.base64EncodedString(), forKey: defaultsKey)
             return SymmetricKey(data: data)
         }
         return resetKey()
@@ -209,30 +205,23 @@ enum Pairing {
     static func resetKey() -> SymmetricKey {
         let key = SymmetricKey(size: .bits256)
         let data = key.withUnsafeBytes { Data($0) }
-        if saveKeychain(data) {
-            UserDefaults.standard.removeObject(forKey: defaultsKey)
-        } else {
-            // No Keychain (it shouldn't happen): better a working pairing than none.
-            UserDefaults.standard.set(data.base64EncodedString(), forKey: defaultsKey)
-        }
+        UserDefaults.standard.set(data.base64EncodedString(), forKey: defaultsKey)
         return key
     }
 
-    private static func readKeychain() -> Data? {
-        var query = keychainQuery
-        query[kSecReturnData as String] = true
+    /// The key 0.1.7 stored in the Keychain (macOS may ask once), removed from there.
+    private static func takeFromKeychain() -> Data? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "com.ayphone.mac.pairing",
+            kSecAttrAccount as String: "pairingKey",
+        ]
+        var read = query
+        read[kSecReturnData as String] = true
         var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess else { return nil }
-        return result as? Data
-    }
-
-    private static func saveKeychain(_ data: Data) -> Bool {
-        let update = [kSecValueData as String: data] as CFDictionary
-        if SecItemUpdate(keychainQuery as CFDictionary, update) == errSecSuccess { return true }
-        var item = keychainQuery
-        item[kSecValueData as String] = data
-        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
+        guard SecItemCopyMatching(read as CFDictionary, &result) == errSecSuccess, let data = result as? Data else { return nil }
+        SecItemDelete(query as CFDictionary)
+        return data
     }
 
     static func qrPayload(key: SymmetricKey, port: UInt16) -> String {

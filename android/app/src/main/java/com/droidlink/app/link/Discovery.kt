@@ -79,10 +79,10 @@ class Discovery(private val ctx: Context) {
                     // "AYPHONE1 <port> <mac name>"
                     if (!text.startsWith("AYPHONE1 ")) continue
                     val host = (packet.address as? Inet4Address)?.hostAddress ?: continue
-                    if (Link.discoveredHost != host) {
-                        Link.discoveredHost = host
-                        Link.poke()
-                    }
+                    // Every one counts: the Mac only announces itself while awake and without
+                    // the phone, and the phone waits for this instead of polling a sleeping Mac.
+                    Link.discoveredHost = host
+                    Link.poke()
                 } catch (_: Exception) {
                     // Socket closed by stop(), or a bad packet.
                 }

@@ -2,6 +2,9 @@ package com.droidlink.app.service
 
 import android.Manifest
 import android.app.Service
+import android.bluetooth.BluetoothClass
+import android.bluetooth.BluetoothDevice
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -17,6 +20,7 @@ import android.provider.Telephony
 import android.util.Log
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.IntentCompat
 import com.droidlink.app.Notifications
 import com.droidlink.app.feature.Battery
 import com.droidlink.app.feature.ClipboardWatcher
@@ -68,6 +72,28 @@ class LinkService : Service() {
         override fun onAvailable(network: Network) = Link.poke()
     }
 
+    /**
+     * Signs the Mac is awake and close by, so the link reconnects without the phone polling a
+     * sleeping Mac: its Bluetooth connecting to this phone (it reconnects the hands-free link as
+     * it wakes), or the phone being unlocked.
+     */
+    private val macNearbyReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == BluetoothDevice.ACTION_ACL_CONNECTED) {
+                val device = IntentCompat.getParcelableExtra(intent, BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+                val computer = try {
+                    device?.bluetoothClass?.majorDeviceClass == BluetoothClass.Device.Major.COMPUTER
+                } catch (_: SecurityException) {
+                    false
+                }
+                if (!computer) return
+                Link.macNearby(fromBluetooth = true)
+                return
+            }
+            Link.macNearby()
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         ServiceCompat.startForeground(
@@ -85,6 +111,10 @@ class LinkService : Service() {
             addAction(Intent.ACTION_USER_PRESENT)
         })
         getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(networkCallback)
+        registerReceiver(macNearbyReceiver, IntentFilter().apply {
+            addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
+            addAction(Intent.ACTION_USER_PRESENT)
+        })
         discovery = Discovery(this)
         // Keep the home-screen widget current.
         scope.launch {
@@ -126,6 +156,7 @@ class LinkService : Service() {
         scope.cancel()
         unregisterReceiver(Battery.receiver)
         unregisterReceiver(PhoneScreen.receiver)
+        unregisterReceiver(macNearbyReceiver)
         getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(networkCallback)
         ClipboardWatcher.stop(this)
         Photos.stop(this)

@@ -67,7 +67,10 @@ object Link {
     private const val USB_HOST = "127.0.0.1"
     private const val BLUETOOTH = "bluetooth"
     private const val QUICK_BLUETOOTH_RETRIES = 4
-    private const val SLOW_BLUETOOTH_RETRY = 10 * 60_000L
+    /** Tries in a row without reaching AyPhone on the Mac before waiting for a sign it's back. */
+    private const val MISSES_BEFORE_WAITING = 3
+    /** How long the Mac gets to answer `auth`; a sleeping one never does. */
+    private const val HANDSHAKE_TIMEOUT = 10_000L
     /** The Mac's "AyPhone" Bluetooth service (must match BluetoothLinkServer.serviceUUID on the Mac). */
     private val BLUETOOTH_SERVICE: UUID = UUID.fromString("6f3c1a52-8b7e-4d2a-9c1e-5a7f0b3d2e91")
 
@@ -86,12 +89,19 @@ object Link {
     /** Hosts that accepted a connection but failed the pairing handshake (another computer), with when. */
     private val rejected = HashMap<String, Long>()
     private var lastScan = 0L
+    /** When the last Bluetooth attempt started or ended (see [macNearby]). */
+    @Volatile private var lastBluetoothTry = 0L
     /** When Bluetooth may be tried next (see [connect]). */
     private var nextBluetoothTry = 0L
-    /** Bluetooth attempts that found no Mac in a row. */
-    private var bluetoothFailures = 0
-    /** The Mac said it's going to sleep; cleared when it's back. */
+    /**
+     * The Mac is asleep or away: it said it's going to sleep, or several tries found no AyPhone
+     * answering. The phone then stops trying (each try over Bluetooth wakes a sleeping Mac) and
+     * waits for a sign it's back: its Wi-Fi announcement, its Bluetooth reconnecting to this
+     * phone, the phone being unlocked, or a network coming up. See [poke] and [macNearby].
+     */
     @Volatile private var macAsleep = false
+    /** Tries in a row that didn't reach AyPhone on the Mac. */
+    private var misses = 0
     /** Quick Bluetooth retries left after a link that dropped right away (see [run]). */
     private var bluetoothQuickRetries = QUICK_BLUETOOTH_RETRIES
 
@@ -137,9 +147,22 @@ object Link {
         state.value = if (Pairing.load(context) == null) State.Unpaired else State.Disconnected
     }
 
-    /** Retry right away instead of waiting out the backoff. */
+    /** The Mac may be reachable (it announced itself, a network came up): try now. */
     fun poke() {
-        if (state.value == State.Connecting) wake.trySend(Unit)
+        if (state.value != State.Connecting) return
+        macAsleep = false
+        misses = 0
+        wake.trySend(Unit)
+    }
+
+    /** The Mac may be in Bluetooth range and awake (its Bluetooth just connected to this phone,
+     *  or the phone was unlocked): try now, Bluetooth included. */
+    fun macNearby(fromBluetooth: Boolean = false) {
+        if (state.value != State.Connecting) return
+        // Our own attempt connects the radios too: that's not the Mac showing up.
+        if (fromBluetooth && SystemClock.elapsedRealtime() - lastBluetoothTry < 20_000) return
+        nextBluetoothTry = 0
+        poke()
     }
 
     fun restart() {
@@ -182,10 +205,12 @@ object Link {
             }
             state.value = State.Connecting
             val connected = connect(pairing)
+            var authenticated = false
+            var retrySoon = false
             if (connected != null) {
+                var wrongKey = false
                 val host = connected.host
                 val openedAt = SystemClock.elapsedRealtime()
-                var authenticated = false
                 try {
                     session(connected, pairing) {
                         authenticated = true
@@ -193,6 +218,7 @@ object Link {
                     }
                 } catch (e: Exception) {
                     Log.i(TAG, "session ended: $e")
+                    wrongKey = !authenticated && e is java.security.GeneralSecurityException
                 }
                 closeSocket()
                 FileReceiver.abortAll(context)
@@ -203,22 +229,34 @@ object Link {
                 if (currentCoroutineContext().isActive) state.value = State.Connecting
                 if (authenticated) backoff = 1_000L
                 if (host == USB_HOST && !authenticated) skipUsbOnce = true
-                if (host != USB_HOST && host != BLUETOOTH && !authenticated) rejected[host] = SystemClock.elapsedRealtime()
+                // Another computer with this port open. (Not a Mac that's asleep and didn't answer.)
+                if (host != USB_HOST && host != BLUETOOTH && wrongKey) rejected[host] = SystemClock.elapsedRealtime()
                 if (host == BLUETOOTH) {
                     // While the Mac is still connecting its hands-free (calls) link to this phone,
                     // macOS hands our new channel to that instead and it drops. That passes in a few
                     // seconds, so retry soon rather than waiting out the usual minute.
-                    if (SystemClock.elapsedRealtime() - openedAt < 10_000 && bluetoothQuickRetries > 0) {
+                    if (!macAsleep && SystemClock.elapsedRealtime() - openedAt < 10_000 && bluetoothQuickRetries > 0) {
                         bluetoothQuickRetries--
                         nextBluetoothTry = SystemClock.elapsedRealtime() + 8_000
+                        retrySoon = true
                     } else if (authenticated) {
                         bluetoothQuickRetries = QUICK_BLUETOOTH_RETRIES
                     }
                 }
             }
-            // Sleep until the backoff expires or something suggests the Mac is reachable again.
-            val poked = withTimeoutOrNull(backoff) { wake.receive() } != null
-            backoff = if (poked) 1_000L else (backoff * 2).coerceAtMost(10_000L)
+            // (A sleeping Mac can even accept a connection, briefly awake in the dark, without
+            // AyPhone answering: only a finished handshake counts.)
+            if (authenticated) misses = 0 else if (!retrySoon && ++misses >= MISSES_BEFORE_WAITING) macAsleep = true
+            // Sleep until the backoff expires or something suggests the Mac is reachable again;
+            // once it's asleep or away, only such a sign.
+            if (macAsleep) {
+                Log.i(TAG, "Mac asleep or away; waiting for it to show up")
+                wake.receive()
+                backoff = 1_000L
+            } else {
+                val poked = withTimeoutOrNull(backoff) { wake.receive() } != null
+                backoff = if (poked) 1_000L else (backoff * 2).coerceAtMost(10_000L)
+            }
         }
     }
 
@@ -251,13 +289,11 @@ object Link {
         }
         // Bluetooth attempts make the phone and Mac connect and disconnect at the radio level
         // (visible in Bluetooth settings), and each one wakes a sleeping Mac. So at most once a
-        // minute, and only every 10 minutes while the Mac is asleep or away.
+        // minute (unless the Mac just showed up over Bluetooth, see [macNearby]).
         if (now < nextBluetoothTry) return null
-        val found = openBluetooth(p)
-        bluetoothFailures = if (found == null) bluetoothFailures + 1 else 0
-        val slow = macAsleep || bluetoothFailures >= 5
-        nextBluetoothTry = now + if (slow) SLOW_BLUETOOTH_RETRY else 60_000
-        return found
+        nextBluetoothTry = now + 60_000
+        lastBluetoothTry = now
+        return openBluetooth(p).also { lastBluetoothTry = SystemClock.elapsedRealtime() }
     }
 
     private fun open(host: String, port: Int, timeoutMs: Int): Conn? = try {
@@ -361,7 +397,16 @@ object Link {
         output.writeInt(auth.size)
         output.write(auth)
         output.flush()
-        val reply = JSONObject(String(pairingCrypto.open(readFrame(input)), Charsets.UTF_8))
+        // (Bluetooth sockets have no read timeout, so close it if the answer doesn't come.)
+        val handshakeTimeout = scope.launch {
+            delay(HANDSHAKE_TIMEOUT)
+            try { link.closer.close() } catch (_: IOException) {}
+        }
+        val reply = try {
+            JSONObject(String(pairingCrypto.open(readFrame(input)), Charsets.UTF_8))
+        } finally {
+            handshakeTimeout.cancel()
+        }
         val macNonce = Base64.decode(reply.optString("nonce"), Base64.DEFAULT)
         if (reply.optString("type") != "authOk" || macNonce.size != LinkCrypto.SESSION_NONCE) throw IOException("bad authOk")
         val c = SessionCrypto(p.key, phoneNonce, macNonce)
@@ -397,7 +442,7 @@ object Link {
                 val json = JSONObject(String(c.open(readFrame(input)), Charsets.UTF_8))
                 if (json.optString("type") == "helloOk") {
                     macAsleep = false
-                    bluetoothFailures = 0
+                    misses = 0
                     macName.value = json.optString("name", p.macName)
                     macModel.value = json.optString("model").ifEmpty { null }
                     state.value = State.Connected
@@ -409,7 +454,6 @@ object Link {
                     // The lid closed: the link is about to drop. Don't keep calling the Mac over
                     // Bluetooth, which wakes it each time; Wi-Fi brings it back when it wakes.
                     macAsleep = true
-                    nextBluetoothTry = SystemClock.elapsedRealtime() + SLOW_BLUETOOTH_RETRY
                     continue
                 }
                 if (json.optString("type") == "macMuted") {

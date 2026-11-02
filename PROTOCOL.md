@@ -8,7 +8,16 @@ The Mac app is the **server**, the Android app is the **client**.
 - Wi-Fi: the Mac advertises the Bonjour service `_droidlink._tcp`; the phone also remembers the IPs from the pairing QR code.
 - USB: the Mac runs `adb reverse tcp:47800 tcp:47800`, and the phone always tries `127.0.0.1:47800` first.
 - Finding the Mac on networks that block Bonjour: every 3 s while disconnected, the Mac broadcasts `AYPHONE1 47800 <Mac name>` on UDP port `47801`; the phone also retries addresses it connected to before, then probes its /24 subnet.
-- Bluetooth fallback (Wi-Fi with client isolation, no cable): an RFCOMM service with UUID `6f3c1a52-8b7e-4d2a-9c1e-5a7f0b3d2e91` (the phone finds the channel by SDP lookup). It is published by the `AyPhoneBluetooth` helper inside the app bundle, which relays bytes to the app's localhost-only listener on `127.0.0.1:47802`; the helper has to be a separate process because inside the app macOS hands incoming channels from the phone to the hands-free (calls) connection. Framing, encryption and the handshake are the same as over TCP. The phone tries Bluetooth last, at most once a minute (sooner after a link that drops right away; every 10 minutes after the Mac says it's going to sleep or after five tries in a row find nothing), and leaves it as soon as USB or Wi-Fi works again.
+- Bluetooth fallback (Wi-Fi with client isolation, no cable): an RFCOMM service with UUID `6f3c1a52-8b7e-4d2a-9c1e-5a7f0b3d2e91` (the phone finds the channel by SDP lookup). It is published by the `AyPhoneBluetooth` helper inside the app bundle, which relays bytes to the app's localhost-only listener on `127.0.0.1:47802`; the helper has to be a separate process because inside the app macOS hands incoming channels from the phone to the hands-free (calls) connection. Framing, encryption and the handshake are the same as over TCP. The phone tries Bluetooth last, at most once a minute (sooner after a link that drops right away), and leaves it as soon as USB or Wi-Fi works again.
+
+## Reconnecting
+
+Each attempt can wake a sleeping Mac (over Bluetooth especially), so the phone doesn't poll one. After `macSleep`, or after three tries in a row that don't finish the handshake, it stops trying and waits for a sign the Mac is back:
+
+- the Mac's UDP beacon or Bonjour announcement (sent only while it's awake and has no phone),
+- the Mac's Bluetooth connecting to the phone (it reconnects the hands-free link as it wakes; the phone ignores connections its own attempts cause),
+- the phone being unlocked or AyPhone opened,
+- the phone joining a network.
 
 ## Pairing
 
@@ -51,7 +60,7 @@ The pairing key only opens a session, so frames recorded from one connection can
 | `ping` / `pong` | both | |
 | `battery` | A→M | `level` (0-100), `charging` |
 | `macBattery` | M→A | `level` (0-100), `charging`: the Mac's battery, on connect and when it changes (not sent by Macs without one) |
-| `macSleep` | M→A | The Mac is going to sleep: the phone tries Bluetooth only every 10 minutes until it's back (each Bluetooth attempt wakes a sleeping Mac) |
+| `macSleep` | M→A | The Mac is going to sleep (also the answer to `hello` while it's only briefly awake in the dark): the phone stops trying until it's back, see Reconnecting |
 | `macMuted` | M→A | `on`: whether the Mac's sound is muted, on connect and after `macMute` |
 | `macMute` | A→M | `on`: mute or unmute the Mac's sound |
 | `mirrorRequest` | A→M | `on`: start (`true`) or stop screen mirroring from the phone |

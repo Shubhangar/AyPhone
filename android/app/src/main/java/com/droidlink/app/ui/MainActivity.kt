@@ -152,6 +152,7 @@ class MainActivity : ComponentActivity() {
         refreshTick++
         // Foreground starts are always allowed, so this also recovers a service the system refused earlier.
         if (Pairing.load(this) != null) LinkService.start(this)
+        Link.macNearby()
     }
 
     private fun onScanned(text: String) {

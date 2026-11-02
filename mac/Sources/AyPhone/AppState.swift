@@ -288,7 +288,7 @@ final class AppState: ObservableObject {
         macInfo.watch { [weak self] in self?.sendMacBattery() }
         server.start()
         // Helps the phone find the Mac on networks that block Bonjour.
-        beacon.shouldSend = { [weak self] in !(self?.connected ?? true) }
+        beacon.shouldSend = { [weak self] in !(self?.connected ?? true) && self?.systemAsleep == false }
         beacon.start()
 
         files.send = { [weak self] msg, done in self?.server.send(msg, completion: done) }
@@ -365,11 +365,21 @@ final class AppState: ObservableObject {
             MainActor.assumeIsolated { self?.didWake() }
         }
 
+        // A sleep that was called off has no didWake; the screens coming on means awake too.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.systemAsleep = false }
+        }
+
         // Tell the phone, so it doesn't keep calling over Bluetooth: each try wakes a sleeping Mac.
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.willSleepNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.server.send(Msg("macSleep")) }
+            MainActor.assumeIsolated {
+                self?.systemAsleep = true
+                self?.server.send(Msg("macSleep"))
+            }
         }
 
         // The phone pings every 15s, but Android pauses it in deep sleep (screen off, idle) and
@@ -389,7 +399,13 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Between going to sleep and fully waking. In between, macOS briefly wakes the Mac in the
+    /// dark (for mail, network…) and AyPhone may run: it then turns the phone away, so the phone
+    /// keeps quiet instead of waking the Mac again and again.
+    private var systemAsleep = false
+
     private func didWake() {
+        systemAsleep = false
         server.disconnect()
         server.reannounce()
         Task {
@@ -471,6 +487,10 @@ final class AppState: ObservableObject {
         lastFrameAt = Date()
         switch m.type {
         case "hello":
+            if systemAsleep {
+                server.send(Msg("macSleep")) { [weak self] in self?.server.disconnect() }
+                return
+            }
             deviceName = m.name
             deviceModel = m.model
             bluetooth.preferredName = m.name
