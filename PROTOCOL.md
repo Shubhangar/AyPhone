@@ -14,10 +14,12 @@ The Mac app is the **server**, the Android app is the **client**.
 
 Each attempt can wake a sleeping Mac (over Bluetooth especially), so the phone doesn't poll one. After `macSleep`, or after three tries in a row that don't finish the handshake, it stops trying and waits for a sign the Mac is back:
 
-- the Mac's UDP beacon or Bonjour announcement (sent only while it's awake and has no phone),
+- the Mac's UDP beacon (`AYPHONE1 <port> <name>` to port 47801 every 3 seconds, broadcast and also sent directly to the last three addresses the phone was reached at over Wi-Fi, since a dozing phone drops broadcasts) or its Bonjour announcement, both only while the Mac is awake and has no phone,
 - the Mac's Bluetooth connecting to the phone (it reconnects the hands-free link as it wakes; the phone ignores connections its own attempts cause),
-- the phone being unlocked or AyPhone opened,
+- the phone's screen coming on, the phone being unlocked or AyPhone opened,
 - the phone joining a network.
+
+The phone listens for the beacon even while connected. Hearing it then means the Mac has lost the link (it restarted, or slept while the phone dozed and missed the connection closing), so the phone sends a `ping`: on a dead connection the Mac answers with a TCP reset and the phone reconnects at once.
 
 ## Pairing
 

@@ -98,6 +98,7 @@ final class LinkRouter {
     }
 
     var isConnected: Bool { tcp.isConnected || bluetooth.isConnected }
+    var connectedAt: Date? { tcp.connectedAt ?? bluetooth.connectedAt }
     var isBluetooth: Bool { !tcp.isConnected && bluetooth.isConnected }
     var peerIsLocal: Bool { tcp.peerIsLocal }
     var peerHost: String? { tcp.peerHost }

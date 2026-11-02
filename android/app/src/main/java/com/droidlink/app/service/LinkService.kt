@@ -75,7 +75,7 @@ class LinkService : Service() {
     /**
      * Signs the Mac is awake and close by, so the link reconnects without the phone polling a
      * sleeping Mac: its Bluetooth connecting to this phone (it reconnects the hands-free link as
-     * it wakes), or the phone being unlocked.
+     * it wakes), or the phone's screen coming on or being unlocked.
      */
     private val macNearbyReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -113,9 +113,11 @@ class LinkService : Service() {
         getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(networkCallback)
         registerReceiver(macNearbyReceiver, IntentFilter().apply {
             addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
+            addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_USER_PRESENT)
         })
         discovery = Discovery(this)
+        discovery.listen()
         // Keep the home-screen widget current.
         scope.launch {
             combine(Link.state, Link.macName, Link.transport, Link.macBattery) { _, _, _, _ -> }
@@ -162,7 +164,7 @@ class LinkService : Service() {
         Photos.stop(this)
         if (smsObserverRegistered) contentResolver.unregisterContentObserver(smsObserver)
         handler.removeCallbacksAndMessages(null)
-        discovery.stop()
+        discovery.close()
         Link.stop()
         super.onDestroy()
     }

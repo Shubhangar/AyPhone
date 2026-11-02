@@ -1,6 +1,9 @@
 import CryptoKit
 import Foundation
 import Network
+import os
+
+private let log = Logger(subsystem: "com.ayphone.mac", category: "link")
 
 /// TCP server the phone connects to. Advertised over Bonjour; also reachable over
 /// USB through `adb reverse`. A second, localhost-only instance takes the phone's Bluetooth
@@ -24,6 +27,8 @@ final class LinkServer {
     /// push the real phone off.
     private var connection: NWConnection?
     private var session: LinkSession?
+    /// When the current phone connected.
+    private(set) var connectedAt: Date?
     private var pending: [ObjectIdentifier: LinkSession] = [:]
 
     var isConnected: Bool { connection != nil }
@@ -126,8 +131,10 @@ final class LinkServer {
     private func dropped(_ conn: NWConnection) {
         pending[ObjectIdentifier(conn)] = nil
         guard conn === connection else { return }
+        log.notice("\(self.loopbackOnly ? "Bluetooth" : "TCP", privacy: .public): phone link closed")
         connection = nil
         session = nil
+        connectedAt = nil
         onConnectionChange(false)
     }
 
@@ -173,6 +180,7 @@ final class LinkServer {
                 conn.cancel(); return false
             }
             pending[id] = LinkSession(pairingKey: key, phoneNonce: phoneNonce, macNonce: macNonce)
+            log.notice("\(self.loopbackOnly ? "Bluetooth" : "TCP", privacy: .public): phone authenticated, session opening")
             write(box, to: conn)
             return true
         }
@@ -187,6 +195,8 @@ final class LinkServer {
             }
             connection = conn
             session = newSession
+            connectedAt = Date()
+            log.notice("\(self.loopbackOnly ? "Bluetooth" : "TCP", privacy: .public): phone connected")
             previous?.cancel()
             onConnectionChange(true)
         }

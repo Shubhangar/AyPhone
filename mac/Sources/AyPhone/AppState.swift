@@ -4,6 +4,7 @@ import Combine
 import os
 
 private let callLog = Logger(subsystem: "com.ayphone.mac", category: "bluetooth")
+private let linkLog = Logger(subsystem: "com.ayphone.mac", category: "link")
 import Foundation
 import SwiftUI
 
@@ -289,6 +290,7 @@ final class AppState: ObservableObject {
         server.start()
         // Helps the phone find the Mac on networks that block Bonjour.
         beacon.shouldSend = { [weak self] in !(self?.connected ?? true) && self?.systemAsleep == false }
+        beacon.phoneAddresses = { UserDefaults.standard.stringArray(forKey: "phoneAddresses") ?? [] }
         beacon.start()
 
         files.send = { [weak self] msg, done in self?.server.send(msg, completion: done) }
@@ -369,7 +371,12 @@ final class AppState: ObservableObject {
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.systemAsleep = false }
+            MainActor.assumeIsolated {
+                guard let self, self.systemAsleep else { return }
+                linkLog.notice("screens woke")
+                self.systemAsleep = false
+                self.beacon.sendNow()
+            }
         }
 
         // Tell the phone, so it doesn't keep calling over Bluetooth: each try wakes a sleeping Mac.
@@ -377,8 +384,10 @@ final class AppState: ObservableObject {
             forName: NSWorkspace.willSleepNotification, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
-                self?.systemAsleep = true
-                self?.server.send(Msg("macSleep"))
+                guard let self else { return }
+                self.systemAsleep = true
+                self.sleptAt = Date()
+                self.server.send(Msg("macSleep")) { [weak self] in self?.server.disconnect() }
             }
         }
 
@@ -404,10 +413,19 @@ final class AppState: ObservableObject {
     /// keeps quiet instead of waking the Mac again and again.
     private var systemAsleep = false
 
+    /// When the Mac last went to sleep.
+    private var sleptAt: Date?
+
     private func didWake() {
+        linkLog.notice("Mac woke; phone connected: \(self.connected, privacy: .public)")
         systemAsleep = false
-        server.disconnect()
+        // Drop a link left over from before the sleep (it's dead), but not one the phone made
+        // since: it can reconnect before this runs, as soon as the screens wake.
+        if let connectedAt = server.connectedAt, let sleptAt, connectedAt < sleptAt {
+            server.disconnect()
+        }
         server.reannounce()
+        beacon.sendNow()
         Task {
             try? await Task.sleep(for: .seconds(2))
             await adb.enableReverse()
@@ -488,6 +506,7 @@ final class AppState: ObservableObject {
         switch m.type {
         case "hello":
             if systemAsleep {
+                linkLog.notice("phone connected while the Mac is asleep; turning it away")
                 server.send(Msg("macSleep")) { [weak self] in self?.server.disconnect() }
                 return
             }
@@ -496,7 +515,12 @@ final class AppState: ObservableObject {
             bluetooth.preferredName = m.name
             mirror.phoneName = m.name ?? "Phone"
             transport = server.isBluetooth ? "Bluetooth" : (server.peerIsLocal ? "USB" : "Wi-Fi")
-            if let host = server.peerHost { adb.phoneSeen(at: host) }
+            if let host = server.peerHost {
+                adb.phoneSeen(at: host)
+                // A few, for the networks the Mac moves between (home, office).
+                let known = UserDefaults.standard.stringArray(forKey: "phoneAddresses") ?? []
+                UserDefaults.standard.set(Array(([host] + known.filter { $0 != host }).prefix(3)), forKey: "phoneAddresses")
+            }
             var ok = Msg("helloOk"); ok.name = Host.current().localizedName ?? "Mac"; ok.model = MacInfo.modelName
             server.send(ok)
             sendMacBattery(force: true)

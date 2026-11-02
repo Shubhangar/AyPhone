@@ -28,8 +28,17 @@ class Discovery(private val ctx: Context) {
     private val multicastLock = ctx.applicationContext.getSystemService(WifiManager::class.java)
         .createMulticastLock("AyPhone discovery").apply { setReferenceCounted(false) }
 
+    /**
+     * Listens for the Mac's beacon all the time, not just while searching: the Mac only sends
+     * it while it has no phone, so hearing it while connected means this link is dead (the Mac
+     * restarted or slept while the phone dozed, and the phone missed it closing).
+     */
+    fun listen() = startBeaconListener()
+
+    /** Searching for the Mac: Bonjour too, and broadcasts kept from being filtered. */
     fun start() {
         startBeaconListener()
+        multicastLock.acquire()
         if (listener != null) return
         val l = object : NsdManager.DiscoveryListener {
             override fun onServiceFound(info: NsdServiceInfo) = resolve(info)
@@ -47,12 +56,18 @@ class Discovery(private val ctx: Context) {
         }
     }
 
+    /** Connected: no more Bonjour, and broadcasts may be filtered again (saves battery). The
+     *  beacon listener stays; the Mac's beacon also comes addressed to the phone. */
     fun stop() {
         listener?.let { try { nsd.stopServiceDiscovery(it) } catch (_: Exception) {} }
         listener = null
+        if (multicastLock.isHeld) multicastLock.release()
+    }
+
+    fun close() {
+        stop()
         beaconSocket?.close()
         beaconSocket = null
-        if (multicastLock.isHeld) multicastLock.release()
     }
 
     private fun startBeaconListener() {
@@ -68,7 +83,6 @@ class Discovery(private val ctx: Context) {
             return
         }
         beaconSocket = socket
-        multicastLock.acquire()
         thread(name = "beacon-listener", isDaemon = true) {
             val buf = ByteArray(512)
             while (beaconSocket === socket) {
@@ -82,7 +96,7 @@ class Discovery(private val ctx: Context) {
                     // Every one counts: the Mac only announces itself while awake and without
                     // the phone, and the phone waits for this instead of polling a sleeping Mac.
                     Link.discoveredHost = host
-                    Link.poke()
+                    if (Link.state.value == Link.State.Connected) Link.checkAlive() else Link.beaconHeard()
                 } catch (_: Exception) {
                     // Socket closed by stop(), or a bad packet.
                 }

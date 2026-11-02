@@ -10,6 +10,9 @@ final class Beacon {
 
     /// Whether to send right now (only while no phone is connected).
     var shouldSend: () -> Bool = { true }
+    /// Where the phone was last reached over Wi-Fi. Sent there too: a phone whose screen is off
+    /// drops broadcasts (its Wi-Fi filters them while it dozes) but not packets addressed to it.
+    var phoneAddresses: () -> [String] = { [] }
 
     private var socketFD: Int32 = -1
     private var timer: Timer?
@@ -26,10 +29,13 @@ final class Beacon {
         }
     }
 
+    /// Announces right away (e.g. on waking) instead of at the next tick.
+    func sendNow() { tick() }
+
     private func tick() {
         guard shouldSend() else { return }
         let bytes = Array(message.utf8)
-        for address in ["255.255.255.255"] + Self.broadcastAddresses() {
+        for address in ["255.255.255.255"] + Self.broadcastAddresses() + phoneAddresses() {
             var sin = sockaddr_in()
             sin.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
             sin.sin_family = sa_family_t(AF_INET)

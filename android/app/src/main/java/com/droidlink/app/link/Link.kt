@@ -70,7 +70,7 @@ object Link {
     /** Tries in a row without reaching AyPhone on the Mac before waiting for a sign it's back. */
     private const val MISSES_BEFORE_WAITING = 3
     /** How long the Mac gets to answer `auth`; a sleeping one never does. */
-    private const val HANDSHAKE_TIMEOUT = 10_000L
+    private const val HANDSHAKE_TIMEOUT = 20_000L
     /** The Mac's "AyPhone" Bluetooth service (must match BluetoothLinkServer.serviceUUID on the Mac). */
     private val BLUETOOTH_SERVICE: UUID = UUID.fromString("6f3c1a52-8b7e-4d2a-9c1e-5a7f0b3d2e91")
 
@@ -102,6 +102,11 @@ object Link {
     @Volatile private var macAsleep = false
     /** Tries in a row that didn't reach AyPhone on the Mac. */
     private var misses = 0
+    /** When the Mac's beacon was last heard: Wi-Fi reaches it on this network. */
+    @Volatile private var lastBeaconAt = 0L
+    /** After the Mac turns the phone away as it goes to sleep, ignore signs it's back for a
+     *  moment (Bonjour still answers for it while it falls asleep), all but its beacon. */
+    @Volatile private var quietUntil = 0L
     /** Quick Bluetooth retries left after a link that dropped right away (see [run]). */
     private var bluetoothQuickRetries = QUICK_BLUETOOTH_RETRIES
 
@@ -147,9 +152,23 @@ object Link {
         state.value = if (Pairing.load(context) == null) State.Unpaired else State.Disconnected
     }
 
+    /** The Mac announced itself while this link looks fine: it doesn't have us, so the link is
+     *  probably dead. A ping finds out right away (the Mac answers a dead connection with a reset). */
+    fun checkAlive() {
+        send(msg("ping"))
+    }
+
+    /** The Mac's beacon arrived while not connected. */
+    fun beaconHeard() {
+        lastBeaconAt = SystemClock.elapsedRealtime()
+        // The Mac only sends it while awake, so it ends the quiet spell straight away.
+        quietUntil = 0
+        poke()
+    }
+
     /** The Mac may be reachable (it announced itself, a network came up): try now. */
     fun poke() {
-        if (state.value != State.Connecting) return
+        if (state.value != State.Connecting || SystemClock.elapsedRealtime() < quietUntil) return
         macAsleep = false
         misses = 0
         wake.trySend(Unit)
@@ -252,6 +271,7 @@ object Link {
             if (macAsleep) {
                 Log.i(TAG, "Mac asleep or away; waiting for it to show up")
                 wake.receive()
+                Log.i(TAG, "Mac showed up; reconnecting")
                 backoff = 1_000L
             } else {
                 val poked = withTimeoutOrNull(backoff) { wake.receive() } != null
@@ -291,6 +311,10 @@ object Link {
         // (visible in Bluetooth settings), and each one wakes a sleeping Mac. So at most once a
         // minute (unless the Mac just showed up over Bluetooth, see [macNearby]).
         if (now < nextBluetoothTry) return null
+        // On a network where the Mac's beacon gets through, Wi-Fi works: when it doesn't answer
+        // yet (the Mac only just woke), its next beacon brings the phone back sooner than
+        // Bluetooth would.
+        if (now - lastBeaconAt < 60_000) return null
         nextBluetoothTry = now + 60_000
         lastBluetoothTry = now
         return openBluetooth(p).also { lastBluetoothTry = SystemClock.elapsedRealtime() }
@@ -318,9 +342,10 @@ object Link {
         val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter ?: return null
         if (!adapter.isEnabled) return null
         val computers = try {
-            adapter.bondedDevices
+            val all = adapter.bondedDevices
                 .filter { it.bluetoothClass?.majorDeviceClass == BluetoothClass.Device.Major.COMPUTER }
-                .sortedByDescending { (it.name ?: "") == p.macName }
+            // Just the paired Mac when it's there by name: each other computer costs seconds.
+            all.filter { it.name == p.macName }.ifEmpty { all }
         } catch (e: SecurityException) {
             return null
         }
@@ -454,6 +479,7 @@ object Link {
                     // The lid closed: the link is about to drop. Don't keep calling the Mac over
                     // Bluetooth, which wakes it each time; Wi-Fi brings it back when it wakes.
                     macAsleep = true
+                    quietUntil = SystemClock.elapsedRealtime() + 15_000
                     continue
                 }
                 if (json.optString("type") == "macMuted") {
