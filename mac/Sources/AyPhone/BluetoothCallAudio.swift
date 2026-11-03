@@ -61,6 +61,10 @@ final class BluetoothCallAudio: NSObject, ObservableObject {
     /// answers (possibly minutes later), which crashes the app, so they're left to finish.
     private var opening: Set<ObjectIdentifier> = []
     private var retryTimer: Timer?
+    /// The Mac is asleep: no connect attempts in its brief dark wakes. Each one stirs the
+    /// phone's Bluetooth (it then tries its own link and wakes the Mac again), and a connect
+    /// that completes then can crash macOS's hands-free code.
+    private var paused = false
     /// Fires if a connect attempt gets no answer, so a dead pairing entry can't stall us forever.
     private var connectTimeout: Timer?
     /// Phones to try, best first, and which one we're on.
@@ -125,9 +129,23 @@ final class BluetoothCallAudio: NSObject, ObservableObject {
         }
     }
 
+    /// The Mac is going to sleep: stop trying to connect until it wakes.
+    func pause() {
+        paused = true
+        retryTimer?.invalidate()
+        connectTimeout?.invalidate()
+    }
+
+    /// The Mac woke: carry on (and reconnect if the link didn't survive the sleep).
+    func resume() {
+        guard paused else { return }
+        paused = false
+        if !isReady { connect() }
+    }
+
     func connect() {
         retryTimer?.invalidate()
-        guard enabled else { return }
+        guard enabled, !paused else { return }
         // IOBluetooth's first call waits on its own startup, which can need the main thread;
         // asking from the main thread can deadlock the app at launch. Ask in the background.
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -161,6 +179,7 @@ final class BluetoothCallAudio: NSObject, ObservableObject {
     }
 
     private func tryCandidate() {
+        guard !paused else { return }
         guard enabled, candidateIndex < candidates.count else {
             scheduleRetry()
             return
@@ -282,7 +301,7 @@ final class BluetoothCallAudio: NSObject, ObservableObject {
 
     private func scheduleRetry() {
         retryTimer?.invalidate()
-        guard enabled else { return }
+        guard enabled, !paused else { return }
         retryTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, !self.isReady else { return }

@@ -385,6 +385,7 @@ final class AppState: ObservableObject {
                 guard let self, self.systemAsleep else { return }
                 linkLog.notice("screens woke")
                 self.systemAsleep = false
+                self.bluetooth.resume()
                 self.beacon.sendNow()
             }
         }
@@ -397,6 +398,7 @@ final class AppState: ObservableObject {
                 guard let self else { return }
                 self.systemAsleep = true
                 self.sleptAt = Date()
+                self.bluetooth.pause()
                 self.server.send(Msg("macSleep")) { [weak self] in self?.server.disconnect() }
             }
         }
@@ -429,6 +431,7 @@ final class AppState: ObservableObject {
     private func didWake() {
         linkLog.notice("Mac woke; phone connected: \(self.connected, privacy: .public)")
         systemAsleep = false
+        bluetooth.resume()
         // Drop a link left over from before the sleep (it's dead), but not one the phone made
         // since: it can reconnect before this runs, as soon as the screens wake.
         if let connectedAt = server.connectedAt, let sleptAt, connectedAt < sleptAt {

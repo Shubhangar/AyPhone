@@ -107,6 +107,8 @@ object Link {
     /** After the Mac turns the phone away as it goes to sleep, ignore signs it's back for a
      *  moment (Bonjour still answers for it while it falls asleep), all but its beacon. */
     @Volatile private var quietUntil = 0L
+    /** The Mac said it's going to sleep (not just stopped answering); cleared when it's back. */
+    @Volatile private var toldAsleep = false
     /** Quick Bluetooth retries left after a link that dropped right away (see [run]). */
     private var bluetoothQuickRetries = QUICK_BLUETOOTH_RETRIES
 
@@ -178,8 +180,9 @@ object Link {
      *  or the phone was unlocked): try now, Bluetooth included. */
     fun macNearby(fromBluetooth: Boolean = false) {
         if (state.value != State.Connecting) return
-        // Our own attempt connects the radios too: that's not the Mac showing up.
-        if (fromBluetooth && SystemClock.elapsedRealtime() - lastBluetoothTry < 20_000) return
+        // Our own attempt connects the radios too: that's not the Mac showing up. Nor is a Mac
+        // that said it's asleep stirring in a dark wake: its Wi-Fi beacon says when it's back.
+        if (fromBluetooth && (toldAsleep || SystemClock.elapsedRealtime() - lastBluetoothTry < 20_000)) return
         nextBluetoothTry = 0
         poke()
     }
@@ -492,6 +495,7 @@ object Link {
                 val json = JSONObject(String(c.open(readFrame(input)), Charsets.UTF_8))
                 if (json.optString("type") == "helloOk") {
                     macAsleep = false
+                    toldAsleep = false
                     misses = 0
                     macName.value = json.optString("name", p.macName)
                     macModel.value = json.optString("model").ifEmpty { null }
@@ -504,6 +508,7 @@ object Link {
                     // The lid closed: the link is about to drop. Don't keep calling the Mac over
                     // Bluetooth, which wakes it each time; Wi-Fi brings it back when it wakes.
                     macAsleep = true
+                    toldAsleep = true
                     quietUntil = SystemClock.elapsedRealtime() + 15_000
                     continue
                 }
