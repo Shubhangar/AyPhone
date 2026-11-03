@@ -830,7 +830,10 @@ final class AppState: ObservableObject {
         if bluetooth.isReady, hiddenCallPanelID != "telephony", let call = call ?? bluetoothCall {
             return bluetoothCallPanel(call)
         }
-        if let n = callNotification {
+        // The phone's own dialer posts a call notification too, but its buttons don't say whether
+        // it's ringing (Samsung's has one button, on its "ongoing" channel even while ringing).
+        // The call state the phone reports does, so regular calls use that panel below.
+        if let n = callNotification, !(call != nil && Self.dialerPackages.contains(n.pkg)) {
             guard n.key != hiddenCallPanelID else { return nil }
             var buttons = n.actions.enumerated().filter { !$0.element.isEmpty }.map { i, title in
                 CallPanelModel.Button(title: title, kind: CallPanelModel.kind(for: title),
@@ -859,6 +862,12 @@ final class AppState: ObservableObject {
         }
         return nil
     }
+
+    /// Apps that post the notification for regular phone calls.
+    private static let dialerPackages: Set<String> = [
+        "com.samsung.android.incallui", "com.samsung.android.dialer", "com.google.android.dialer",
+        "com.android.dialer", "com.android.incallui", "com.android.server.telecom",
+    ]
 
     /// Puts the phone's call sound on its loudspeaker (or back to the earpiece), so a call
     /// answered from the Mac can be heard without picking the phone up.
