@@ -31,12 +31,12 @@ import kotlin.math.pow
 object TransferGlow {
     private var showing = false
 
-    fun show(ctx: Context, receiving: Boolean) {
+    fun show(ctx: Context, receiving: Boolean, ignoreLock: Boolean = false) {
         Handler(Looper.getMainLooper()).post {
             if (showing || !Settings.canDrawOverlays(ctx)) return@post
             // Locked or screen off: nobody would see it, and animations don't run then anyway.
             val locked = ctx.getSystemService(android.app.KeyguardManager::class.java).isKeyguardLocked
-            if (locked || !ctx.getSystemService(android.os.PowerManager::class.java).isInteractive) return@post
+            if (!ignoreLock && (locked || !ctx.getSystemService(android.os.PowerManager::class.java).isInteractive)) return@post
             showing = true
             val wm = ctx.getSystemService(WindowManager::class.java)
             val view = GlowView(ctx.applicationContext, receiving)
@@ -62,6 +62,23 @@ object TransferGlow {
                 showing = false
             }
             view.onDone = { Handler(Looper.getMainLooper()).post(remove) }
+            // Android sometimes stops handing it frames after the first (seen just after the phone
+            // was unlocked), leaving it frozen. Nudge it a few times a second, and if it still
+            // hasn't drawn for a second, take it down rather than leave it stuck.
+            val main = Handler(Looper.getMainLooper())
+            val watch = object : Runnable {
+                override fun run() {
+                    if (!view.isAttachedToWindow) return
+                    if (view.stalledFor() > 1000) {
+                        android.util.Log.w("AyPhone", "transfer glow stopped drawing; removing it")
+                        remove()
+                        return
+                    }
+                    view.invalidate()
+                    main.postDelayed(this, 250)
+                }
+            }
+            main.postDelayed(watch, 250)
             // Whatever happens (the screen turning off midway…), take it down.
             Handler(Looper.getMainLooper()).postDelayed(remove, (total * 1000).toLong() + 1500)
         }
@@ -72,8 +89,24 @@ object TransferGlow {
         /** Seconds since the start. */
         private var time = 0f
         private var startedAt = 0L
-        /** Called once the drop-down has gone. */
+        private var drewAt = 0L
+
+        /** Milliseconds since it last drew (0 before the first frame). */
+        fun stalledFor() = if (drewAt == 0L) 0L else SystemClock.elapsedRealtime() - drewAt
+        /** Called once the drop-down has gone, or the screen turned off midway. */
         var onDone: () -> Unit = {}
+
+        // Locked or turned off midway: nobody's watching, and its frames stop until the screen
+        // comes back, leaving it frozen there. Take it down now.
+        override fun onScreenStateChanged(screenState: Int) {
+            super.onScreenStateChanged(screenState)
+            if (screenState == SCREEN_STATE_OFF) onDone()
+        }
+
+        override fun onWindowVisibilityChanged(visibility: Int) {
+            super.onWindowVisibilityChanged(visibility)
+            if (visibility != VISIBLE && startedAt != 0L) onDone()
+        }
         private val end = (if (receiving) 3.1f else 3.0f) + 1.6f
         /** When the glow itself has faded; the drop-down follows. */
         private val total = if (receiving) 3.1f else 3.0f
@@ -121,8 +154,10 @@ object TransferGlow {
         }
 
         override fun onDraw(canvas: Canvas) {
-            val now = SystemClock.uptimeMillis()
+            // (A clock that keeps going while the phone sleeps: after a lock it's simply over.)
+            val now = SystemClock.elapsedRealtime()
             if (startedAt == 0L) startedAt = now
+            drewAt = now
             time = (now - startedAt) / 1000f
             if (time >= end) {
                 onDone()
