@@ -60,19 +60,54 @@ import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 
 class MainActivity : ComponentActivity() {
-    private val runtimePermissions = buildList {
+    /** What the setup step needs: texts, caller names, calls, and AyPhone's own notifications. */
+    private val essentialPermissions = buildList {
         add(Manifest.permission.READ_SMS)
         add(Manifest.permission.SEND_SMS)
         add(Manifest.permission.READ_CONTACTS)
         add(Manifest.permission.READ_PHONE_STATE)
         add(Manifest.permission.READ_CALL_LOG)
         add(Manifest.permission.ANSWER_PHONE_CALLS)
+        if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    /** Asked for in the same go, but they don't hold the step up: each only switches off its own
+     *  feature (calling from the Mac, photos, mirroring sound, the Bluetooth fallback). */
+    private val extraPermissions = buildList {
         add(Manifest.permission.CALL_PHONE)
-        add(if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_IMAGES else Manifest.permission.READ_EXTERNAL_STORAGE)
+        if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.READ_MEDIA_IMAGES) else add(Manifest.permission.READ_EXTERNAL_STORAGE)
+        if (Build.VERSION.SDK_INT >= 34) add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
         add(Manifest.permission.RECORD_AUDIO)
         if (Build.VERSION.SDK_INT >= 31) add(Manifest.permission.BLUETOOTH_CONNECT)
-        if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
-    }.toTypedArray()
+    }
+
+    private val runtimePermissions = (essentialPermissions + extraPermissions).toTypedArray()
+
+    /** Whether Android has been asked already, so a tap that it would ignore (asked twice and
+     *  refused) opens AyPhone's settings instead. */
+    private var askedForPermissions = false
+
+    private fun askForPermissions() {
+        val missing = essentialPermissions.filterNot(::granted)
+        // Android stops showing the request once a permission has been refused twice.
+        if (askedForPermissions && missing.isNotEmpty() && missing.none(::shouldShowRequestPermissionRationale)) {
+            toast("Allow ${missingNames(missing)} under Permissions")
+            appSettings(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+            return
+        }
+        askedForPermissions = true
+        permissionRequest.launch(runtimePermissions)
+    }
+
+    private fun missingNames(missing: List<String>) = missing.map {
+        when (it) {
+            Manifest.permission.READ_SMS, Manifest.permission.SEND_SMS -> "SMS"
+            Manifest.permission.READ_CONTACTS -> "Contacts"
+            Manifest.permission.READ_CALL_LOG -> "Call logs"
+            Manifest.permission.POST_NOTIFICATIONS -> "Notifications"
+            else -> "Phone"
+        }
+    }.distinct().joinToString(", ")
 
     /** Bumped in onResume so the setup steps re-read permission state. */
     private var refreshTick by mutableIntStateOf(0)
@@ -205,10 +240,14 @@ class MainActivity : ComponentActivity() {
             "Notification access", "Mirror notifications, reply from your Mac, control media", Icons.Filled.Notifications,
             NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)
         ) { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) },
-        SetupStep(
-            "Messages, contacts, calls, photos & sound", "Texts, caller names and calling from your Mac, recent photos, mirroring sound, Bluetooth fallback",
-            Icons.Filled.Sms, runtimePermissions.all(::granted)
-        ) { permissionRequest.launch(runtimePermissions) },
+        essentialPermissions.filterNot(::granted).let { missing ->
+            SetupStep(
+                "Messages, contacts, calls, photos & sound",
+                if (missing.isEmpty()) "Texts, caller names and calling from your Mac, recent photos, mirroring sound, Bluetooth fallback"
+                else "Still needed: ${missingNames(missing)}",
+                Icons.Filled.Sms, missing.isEmpty()
+            ) { askForPermissions() }
+        },
         SetupStep(
             "Display over other apps", "Lets your Mac open apps, and paste what you copy here with ⌘V", Icons.Filled.Layers,
             Settings.canDrawOverlays(this)

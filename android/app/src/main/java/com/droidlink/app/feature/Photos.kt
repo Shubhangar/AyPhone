@@ -24,9 +24,16 @@ import java.io.ByteArrayOutputStream
 object Photos {
     private const val PREFS = "settings"
 
-    private fun allowed(ctx: Context) = ContextCompat.checkSelfPermission(
-        ctx, if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_IMAGES else Manifest.permission.READ_EXTERNAL_STORAGE
-    ) == PackageManager.PERMISSION_GRANTED
+    /** All photos, or (Android 14+, "Allow limited access") just the ones picked. */
+    private fun allowed(ctx: Context): Boolean {
+        fun has(p: String) = ContextCompat.checkSelfPermission(ctx, p) == PackageManager.PERMISSION_GRANTED
+        return if (Build.VERSION.SDK_INT >= 33) {
+            has(Manifest.permission.READ_MEDIA_IMAGES) ||
+                (Build.VERSION.SDK_INT >= 34 && has(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED))
+        } else {
+            has(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+    }
 
     fun screenshotSync(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean("screenshotSync", true)
 
