@@ -56,6 +56,7 @@ import androidx.compose.material.icons.filled.LaptopMac
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mouse
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SystemUpdate
@@ -515,6 +516,9 @@ private fun MacRemoteCard() {
             }
             RemoteButton("Trackpad", Icons.Filled.Mouse, false, Modifier.weight(1f)) {
                 ctx.startActivity(android.content.Intent(ctx, TrackpadActivity::class.java))
+            }
+            RemoteButton("Deck", Icons.Filled.Apps, false, Modifier.weight(1f)) {
+                ctx.startActivity(android.content.Intent(ctx, DeckActivity::class.java))
             }
         }
         Spacer(Modifier.height(12.dp))

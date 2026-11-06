@@ -116,6 +116,9 @@
 
         <!-- Shows Android's "Start sharing?" prompt for standard mirroring. -->
         <activity
+            android:name=".ui.DeckActivity"
+            android:exported="false" />
+        <activity
             android:name=".ui.TrackpadActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />

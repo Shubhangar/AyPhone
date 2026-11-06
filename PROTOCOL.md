@@ -63,6 +63,9 @@ The pairing key only opens a session, so frames recorded from one connection can
 | `battery` | A→M | `level` (0-100), `charging` |
 | `macBattery` | M→A | `level` (0-100), `charging`: the Mac's battery, on connect and when it changes (not sent by Macs without one) |
 | `macSleep` | M→A | The Mac is going to sleep (also the answer to `hello` while it's only briefly awake in the dark): the phone stops trying until it's back, see Reconnecting |
+| `deck` | M→A | The Deck for the app in front on the Mac: `name`, `pkg` (bundle ID), `on` (it has its own layout), `icon` (96 px PNG, base64), `color` (its main colour, `#RRGGBB`), `deck`: buttons `{id, label, icon, action, section?, style?, hint?}` (`style` is `primary` or `danger`; `hint` is the shortcut, like `⌥⌘K`). Sent on connect and whenever another app comes to the front |
+| `deckPress` | A→M | `id`: a Deck button was tapped; the Mac presses its shortcut (or media/lock action) in that app |
+| `deckDone` | M→A | `id`, `on`: whether the press went through (shortcuts need Accessibility on the Mac) |
 | `macNowPlaying` | M→A | `playing`, `title`, `artist`: what the Mac is playing, on connect and when it changes (read through `/usr/bin/perl`, which macOS lets see it; see `mac/NowPlaying`) |
 | `macMuted` | M→A | `on`: whether the Mac's sound is muted, on connect and after `macMute` |
 | `macMute` | A→M | `on`: mute or unmute the Mac's sound |

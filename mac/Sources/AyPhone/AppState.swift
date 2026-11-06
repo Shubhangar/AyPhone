@@ -369,6 +369,13 @@ final class AppState: ObservableObject {
         updater.onNewRelease = { [weak self] version in self?.notifier.updateAvailable(version) }
         updater.start()
         nowPlaying.onChange = { [weak self] _ in self?.sendNowPlaying() }
+        frontApp = NSWorkspace.shared.frontmostApplication.flatMap { $0.bundleIdentifier == Bundle.main.bundleIdentifier ? nil : $0 }
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            MainActor.assumeIsolated { self?.frontAppChanged(app) }
+        }
         nowPlaying.start()
 
         // Pick up permission changes made in System Settings.
@@ -511,6 +518,44 @@ final class AppState: ObservableObject {
         server.send(m)
     }
 
+    /// The app in front on the Mac (not AyPhone itself), for the phone's Deck.
+    private var frontApp: NSRunningApplication?
+
+    private func frontAppChanged(_ app: NSRunningApplication?) {
+        guard let app, app.bundleIdentifier != Bundle.main.bundleIdentifier else { return }
+        guard app.bundleIdentifier != frontApp?.bundleIdentifier else { return }
+        frontApp = app
+        sendDeck()
+    }
+
+    /// The Deck for the app in front: its name, whether it has its own layout, and the buttons.
+    private func sendDeck() {
+        var m = Msg("deck")
+        m.name = frontApp?.localizedName ?? "Mac"
+        m.pkg = frontApp?.bundleIdentifier
+        m.on = Deck.hasLayout(frontApp?.bundleIdentifier)
+        m.deck = Deck.buttons(for: frontApp?.bundleIdentifier)
+        let look = Deck.look(of: frontApp)
+        m.icon = look.icon
+        m.color = look.color
+        server.send(m)
+    }
+
+    /// A Deck button pressed on the phone: bring its app back in front if AyPhone took over,
+    /// then press it.
+    private func deckPressed(_ id: String) {
+        guard let button = Deck.buttons(for: frontApp?.bundleIdentifier).first(where: { $0.id == id }) else { return }
+        // Shortcuts need Accessibility; the phone shakes the button if they can't be pressed.
+        var done = Msg("deckDone"); done.id = id; done.on = !button.action.hasPrefix("keys:") || AXIsProcessTrusted()
+        server.send(done)
+        if let app = frontApp, NSWorkspace.shared.frontmostApplication != app {
+            app.activate()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { Deck.perform(button.action) }
+        } else {
+            Deck.perform(button.action)
+        }
+    }
+
     /// Whether the Mac is playing, and what, for the phone's play/pause button.
     private func sendNowPlaying() {
         let state = nowPlaying.state
@@ -554,6 +599,7 @@ final class AppState: ObservableObject {
             sendMacBattery(force: true)
             sendMacMuted()
             sendNowPlaying()
+            sendDeck()
             // Something copied while the phone was away: it gets it now.
             if copyWaitingForPhone && clipboardSyncEnabled {
                 clipboard.resendCurrent()
@@ -567,6 +613,8 @@ final class AppState: ObservableObject {
             askForPastePermissionOnce()
         case "ping":
             server.send(Msg("pong"))
+        case "deckPress":
+            if let id = m.id { deckPressed(id) }
         case "battery":
             let before = (level: battery, charging: charging)
             withAnimation(.smooth) {

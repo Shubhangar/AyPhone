@@ -90,6 +90,21 @@ object Link {
     data class MacNowPlaying(val playing: Boolean, val title: String, val artist: String)
     val macNowPlaying = MutableStateFlow(MacNowPlaying(false, "", ""))
 
+    /** The Deck: buttons for the app in front on the Mac (see DeckActivity). */
+    data class DeckButton(
+        val id: String, val label: String, val icon: String,
+        /** Heading it's grouped under; "primary" / "danger" for the big buttons; the shortcut (⌥⌘K). */
+        val section: String?, val style: String?, val hint: String?,
+    )
+    data class MacDeck(
+        val name: String, val pkg: String, val hasLayout: Boolean, val buttons: List<DeckButton>,
+        /** The app's icon (PNG) and main colour, for the header and tint. */
+        val icon: ByteArray?, val color: Int?,
+    )
+    val macDeck = MutableStateFlow(MacDeck("Your Mac", "", false, emptyList(), null, null))
+    /** The Mac's answer to a Deck press: done, or not (Accessibility is off). */
+    val deckDone = kotlinx.coroutines.flow.MutableSharedFlow<Pair<String, Boolean>>(extraBufferCapacity = 8)
+
     /** Hosts that accepted a connection but failed the pairing handshake (another computer), with when. */
     private val rejected = HashMap<String, Long>()
     private var lastScan = 0L
@@ -514,6 +529,24 @@ object Link {
                     macAsleep = true
                     toldAsleep = true
                     quietUntil = SystemClock.elapsedRealtime() + 15_000
+                    continue
+                }
+                if (json.optString("type") == "deck") {
+                    val list = json.optJSONArray("deck")
+                    val buttons = (0 until (list?.length() ?: 0)).map { i ->
+                        val b = list!!.getJSONObject(i)
+                        DeckButton(
+                            b.optString("id"), b.optString("label"), b.optString("icon"),
+                            b.optString("section").ifEmpty { null }, b.optString("style").ifEmpty { null }, b.optString("hint").ifEmpty { null }
+                        )
+                    }
+                    val icon = json.optString("icon").ifEmpty { null }?.let { Base64.decode(it, Base64.DEFAULT) }
+                    val color = json.optString("color").ifEmpty { null }?.let { runCatching { android.graphics.Color.parseColor(it) }.getOrNull() }
+                    macDeck.value = MacDeck(json.optString("name", "Your Mac"), json.optString("pkg"), json.optBoolean("on"), buttons, icon, color)
+                    continue
+                }
+                if (json.optString("type") == "deckDone") {
+                    deckDone.tryEmit(json.optString("id") to json.optBoolean("on", true))
                     continue
                 }
                 if (json.optString("type") == "macNowPlaying") {

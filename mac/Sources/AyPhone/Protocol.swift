@@ -68,6 +68,10 @@ struct Msg: Codable {
 
     // App control
     var apps: [PhoneApp]?
+    /// deck: the buttons for the app in front on the Mac.
+    var deck: [DeckButton]?
+    /// deck: the app's main colour, from its icon ("#A259FF").
+    var color: String?
     var photos: [PhonePhoto]?
 
     // Contacts
