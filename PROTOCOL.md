@@ -65,6 +65,10 @@ The pairing key only opens a session, so frames recorded from one connection can
 | `macSleep` | M→A | The Mac is going to sleep (also the answer to `hello` while it's only briefly awake in the dark): the phone stops trying until it's back, see Reconnecting |
 | `deck` | M→A | The Deck for the app in front on the Mac: `name`, `pkg` (bundle ID), `on` (it has its own layout), `icon` (96 px PNG, base64), `color` (its main colour, `#RRGGBB`), `deck`: buttons `{id, label, icon, action, section?, style?, hint?}` (`style` is `primary` or `danger`; `hint` is the shortcut, like `⌥⌘K`). Sent on connect and whenever another app comes to the front |
 | `scanRequest` | M→A | `action`: `document`, `text` or `photo`; the phone opens its camera in that mode (Scan with phone) |
+| `macScreen` | M→A | `width`, `height`: the Mac's main screen in points, for the Pad's drawing area (on connect) |
+| `padPointer` | A→M | `state` (`down`, `move`, `up`), `points`: x, y, pressure triples in 0…1 of the Mac's screen; the Mac clicks and drags there (Pad → Draw) |
+| `padKeys` | A→M | `action`: `cmd+z` or `cmd+shift+z`, Undo and Redo in the app being drawn in |
+| `ink` | A→M | Pad → Mark up, ink over the Mac's screen. `state`: `start` (`id`, `index` colour as 0xRRGGBB, `width`, `on` highlighter, first `points`), `add` (`points`: x, y pairs in 0…1), `remove` (stroke ids in `text`, comma-separated: undo and the eraser), `clear`, `save` (a screenshot with the ink on the Desktop), `done` |
 | `insertText` | A→M | `text`: read from a photo on the phone; the Mac puts it on the clipboard and pastes it into the app in front |
 | `insertImage` | A→M | `data` (base64), `mime`: a photo from the phone, pasted into the app in front the same way |
 | `deckPress` | A→M | `id`: a Deck button was tapped; the Mac presses its shortcut (or media/lock action) in that app |

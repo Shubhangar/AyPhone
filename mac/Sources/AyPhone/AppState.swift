@@ -624,6 +624,11 @@ final class AppState: ObservableObject {
             sendMacMuted()
             sendNowPlaying()
             sendDeck()
+            // The Pad's drawing area takes the screen's shape.
+            if let frame = NSScreen.screens.first?.frame {
+                var screen = Msg("macScreen"); screen.width = Int(frame.width); screen.height = Int(frame.height)
+                server.send(screen)
+            }
             // Something copied while the phone was away: it gets it now.
             if copyWaitingForPhone && clipboardSyncEnabled {
                 clipboard.resendCurrent()
@@ -637,6 +642,16 @@ final class AppState: ObservableObject {
             askForPastePermissionOnce()
         case "ping":
             server.send(Msg("pong"))
+        case "padPointer":
+            Pad.pointer(state: m.state ?? "move", points: m.points ?? [])
+        case "ink":
+            Pad.ink(m)
+        case "padKeys":
+            // Draw's Undo / Redo: the shortcut, in the app being drawn in.
+            if let keys = m.action, ["cmd+z", "cmd+shift+z"].contains(keys) {
+                if let app = frontApp, NSWorkspace.shared.frontmostApplication != app { app.activate() }
+                Deck.press(keys)
+            }
         case "insertText":
             if let text = m.text { insertFromPhone("Text") { self.clipboard.setFromPhone(text) } }
         case "insertImage":

@@ -102,6 +102,8 @@ object Link {
         val icon: ByteArray?, val color: Int?,
     )
     val macDeck = MutableStateFlow(MacDeck("Your Mac", "", false, emptyList(), null, null))
+    /** The Mac's main screen in points, for the Pad's drawing area. */
+    val macScreen = MutableStateFlow(1512 to 982)
     /** The Mac's answer to a Deck press: done, or not (Accessibility is off). */
     val deckDone = kotlinx.coroutines.flow.MutableSharedFlow<Pair<String, Boolean>>(extraBufferCapacity = 8)
 
@@ -543,6 +545,10 @@ object Link {
                     val icon = json.optString("icon").ifEmpty { null }?.let { Base64.decode(it, Base64.DEFAULT) }
                     val color = json.optString("color").ifEmpty { null }?.let { runCatching { android.graphics.Color.parseColor(it) }.getOrNull() }
                     macDeck.value = MacDeck(json.optString("name", "Your Mac"), json.optString("pkg"), json.optBoolean("on"), buttons, icon, color)
+                    continue
+                }
+                if (json.optString("type") == "macScreen") {
+                    macScreen.value = json.optInt("width", 1512) to json.optInt("height", 982)
                     continue
                 }
                 if (json.optString("type") == "deckDone") {

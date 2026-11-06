@@ -72,6 +72,8 @@ struct Msg: Codable {
     var deck: [DeckButton]?
     /// deck: the app's main colour, from its icon ("#A259FF").
     var color: String?
+    /// padPointer: x, y, pressure triples; ink: x, y pairs (all 0…1 of the Mac's screen).
+    var points: [Double]?
     var photos: [PhonePhoto]?
 
     // Contacts

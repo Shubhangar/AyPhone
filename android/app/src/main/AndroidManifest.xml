@@ -122,6 +122,9 @@
             android:name=".ui.ScanActivity"
             android:exported="false" />
         <activity
+            android:name=".ui.PadActivity"
+            android:exported="false" />
+        <activity
             android:name=".ui.TrackpadActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />

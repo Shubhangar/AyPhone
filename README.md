@@ -38,7 +38,8 @@ Then follow the **[installation guide](dist/INSTALL.md)**: drag the Mac app to A
 | Photos | The phone's latest photos on the Mac (click to bring one over); new screenshots arrive automatically |
 | Deck | Big buttons on the phone for the app in front on the Mac (Figma, Zoom, Teams, Slack, Chrome, Safari, Spotify, Music, VS Code, Keynote, and a general set), each pressing that app's shortcut |
 | Scan to Mac | From the Mac's menu bar or the phone: scan a document (opens on the Mac as a PDF), read printed text (pasted where the Mac's cursor is) or take a photo (pasted into the app in front). On-device, with Google's scanner and text recognition |
-| Phone as a remote | Lock the Mac, make it ring (Find my Mac), control its music and volume (with what's playing and whether it's paused), or use the phone as its trackpad and keyboard |
+| Pad | Draw (the phone as a drawing tablet for the Mac's screen, S Pen pressure), Sign (a transparent signature pasted where you're working, saved for reuse), Mark up (pen, highlighter and eraser ink over the Mac's screen) |
+| Phone as a remote | Lock the Mac, make it ring (Find my Mac), control its music and volume (with what's playing and whether it's paused), or use the phone as its trackpad and keyboard (with the phone keyboard's suggestions and autocorrect) |
 | Battery, Find my phone, open links on the other device | ✅ Battery warnings both ways (low, fully charged); the Mac's battery shows on the phone and its widget |
 | Android widget | One row: the Mac's battery and connection with Send files, Lock, Play/Pause and Mute. Stretched to two rows: also Screen share, Trackpad, Find my Mac and big media controls |
 | Updates | Both apps check GitHub for new releases and show "Update available" (and a notification, once per version). One click or tap installs it; only builds signed with the same key are accepted |

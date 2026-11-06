@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Mouse
 import androidx.compose.material3.Icon
@@ -68,16 +69,23 @@ class TrackpadActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             AyPhoneTheme {
-                Box(Modifier.fillMaxSize().background(BackdropBrush)) { Trackpad(::finish) }
+                Box(Modifier.fillMaxSize().background(BackdropBrush)) {
+                    Trackpad(::finish) {
+                        startActivity(android.content.Intent(this@TrackpadActivity, PadActivity::class.java))
+                        finish()
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun Trackpad(close: () -> Unit) {
+private fun Trackpad(close: () -> Unit, openPad: () -> Unit) {
     val haptics = LocalHapticFeedback.current
     var typing by remember { mutableStateOf(false) }
+    /** What's been typed since the last click, shown above the keyboard. */
+    var typed by remember { mutableStateOf("") }
     var touching by remember { mutableFloatStateOf(0f) }
 
     Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(16.dp)) {
@@ -85,6 +93,7 @@ private fun Trackpad(close: () -> Unit) {
             IconButton(onClick = close) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White) }
             Text("Trackpad", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color.White)
             Spacer(Modifier.weight(1f))
+            IconButton(onClick = openPad) { Icon(Icons.Filled.Draw, "Pad", tint = Color.White) }
             IconButton(onClick = { typing = !typing }) {
                 Icon(Icons.Filled.Keyboard, "Keyboard", tint = if (typing) Cyan else Color.White)
             }
@@ -152,10 +161,13 @@ private fun Trackpad(close: () -> Unit) {
                             when {
                                 dragging -> MacControl.click("up")
                                 moved < 14f && duration < 300 && maxFingers >= 2 -> {
+                                    typed = ""
                                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     MacControl.click("right")
                                 }
                                 moved < 14f && duration < 300 -> {
+                                    // A click usually moves the cursor somewhere else: start afresh.
+                                    typed = ""
                                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     MacControl.click("left")
                                 }
@@ -175,7 +187,7 @@ private fun Trackpad(close: () -> Unit) {
         }
 
         Spacer(Modifier.height(12.dp))
-        if (typing) Keyboard() else Buttons()
+        if (typing) Keyboard(typed) { typed = it } else Buttons()
     }
 }
 
@@ -187,28 +199,41 @@ private fun Buttons() {
     }
 }
 
-/** Typing goes straight to the Mac; the keys row covers what a phone keyboard lacks. */
+/** Typing goes straight to the Mac; the keys row covers what a phone keyboard lacks. Above it,
+ *  what you've typed, so you needn't look up at the Mac to catch a typo. */
 @Composable
-private fun Keyboard() {
+private fun Keyboard(typed: String, setTyped: (String) -> Unit) {
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     // A sentinel space so Backspace on an "empty" field still reaches us.
     var value by remember { mutableStateOf(TextFieldValue(" ", TextRange(1))) }
     Column {
+        // Tapping the strip brings the keyboard back if it was put away.
+        TypedStrip(typed, clear = { setTyped("") }) {
+            focus.requestFocus()
+            keyboard?.show()
+        }
+        Spacer(Modifier.height(8.dp))
         BasicTextField(
             value = value,
             onValueChange = { new ->
+                // The field holds the sentinel plus the word being typed, so the phone's keyboard
+                // shows it with its suggestions. Whatever changed (a letter, Backspace, a tapped
+                // suggestion or autocorrect) is replayed on the Mac: delete what differs, type
+                // the rest. Backspace past the sentinel deletes on the Mac as usual.
                 val old = value.text
-                when {
-                    new.text.length > old.length && new.text.startsWith(old) -> MacControl.type(new.text.substring(old.length))
-                    new.text.length < old.length -> repeat(old.length - new.text.length) { MacControl.key("delete") }
-                    new.text != old -> {
-                        repeat(old.length - 1) { MacControl.key("delete") }
-                        MacControl.type(new.text.drop(1))
-                    }
+                val common = old.commonPrefixWith(new.text).length
+                val deleted = old.length - common
+                val added = new.text.substring(common)
+                repeat(deleted) { MacControl.key("delete") }
+                if (added.isNotEmpty()) MacControl.type(added)
+                if (deleted > 0 || added.isNotEmpty()) setTyped((typed.dropLast(deleted) + added).takeLast(400))
+                // A finished word (space, return, punctuation from a suggestion) starts a new one.
+                value = if (new.text.isEmpty() || !new.text.startsWith(" ") || new.text.drop(1).any { it.isWhitespace() }) {
+                    TextFieldValue(" ", TextRange(1))
+                } else {
+                    new
                 }
-                // Keep just the sentinel so the field never grows.
-                value = TextFieldValue(" ", TextRange(1))
             },
             cursorBrush = SolidColor(Color.Transparent),
             textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.Transparent),
@@ -216,17 +241,44 @@ private fun Keyboard() {
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("esc" to "escape", "tab" to "tab", "←" to "left", "↑" to "up", "↓" to "down", "→" to "right", "⏎" to "return")
-                .forEach { (label, key) -> PadButton(label, Modifier.weight(1f)) { MacControl.key(key) } }
-        }
-        Spacer(Modifier.height(8.dp))
-        PadButton("Show keyboard", Modifier.fillMaxWidth()) {
-            focus.requestFocus()
-            keyboard?.show()
+                .forEach { (label, key) ->
+                    PadButton(label, Modifier.weight(1f)) {
+                        MacControl.key(key)
+                        when (key) {
+                            "return" -> setTyped((typed + "\n").takeLast(400))
+                            // Moving around or escaping: what's shown no longer matches the Mac.
+                            "escape", "tab", "up", "down" -> setTyped("")
+                        }
+                    }
+                }
         }
     }
     androidx.compose.runtime.LaunchedEffect(Unit) {
         focus.requestFocus()
         keyboard?.show()
+    }
+}
+
+/** The word being typed, large, like the keyboard's own bar shows it. */
+@Composable
+private fun TypedStrip(typed: String, clear: () -> Unit, showKeyboard: () -> Unit) {
+    val word = typed.substringAfterLast(' ').substringAfterLast('\n')
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(GlassFill)
+            .border(1.dp, GlassEdge, RoundedCornerShape(16.dp)).clickable(onClick = showKeyboard)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            if (word.isEmpty()) "The word you're typing shows here" else "$word▏",
+            color = if (word.isEmpty()) Color.White.copy(alpha = 0.4f) else Color.White,
+            style = if (word.isEmpty()) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.headlineSmall,
+            maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        if (word.isNotEmpty()) {
+            Text("Clear", color = Cyan, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 10.dp).clickable(onClick = clear))
+        }
     }
 }
 
