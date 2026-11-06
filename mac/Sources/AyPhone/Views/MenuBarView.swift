@@ -72,6 +72,13 @@ struct MenuBarView: View {
                 }
             }
 
+            // Scan with phone: the phone's camera opens in that mode.
+            HStack(spacing: 8) {
+                quick("doc.viewfinder", "Scan doc") { state.scanWithPhone("document") }
+                quick("text.viewfinder", "Scan text") { state.scanWithPhone("text") }
+                quick("camera.viewfinder", "Photo") { state.scanWithPhone("photo") }
+            }
+
             if !state.notifications.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Recent").font(.caption.weight(.semibold)).foregroundStyle(.secondary)

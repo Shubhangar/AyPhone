@@ -93,13 +93,14 @@ object FileSender {
 
     /** [glow] for sends from the Files option (the Files tile or widget), which play the transfer
      *  glow here and on the Mac; photos and screenshots go quietly. */
-    fun send(files: List<Outgoing>, glow: Boolean = false) {
+    /** [open]: the Mac opens it once it's there (a scanned document). */
+    fun send(files: List<Outgoing>, glow: Boolean = false, open: Boolean = false) {
         if (files.isEmpty()) return
         if (glow) com.droidlink.app.ui.TransferGlow.show(Link.context, receiving = false)
         Link.scope.launch {
             for (f in files) {
                 try {
-                    f.input.use { sendOne(f, it, glow) }
+                    f.input.use { sendOne(f, it, glow, open) }
                 } catch (e: Exception) {
                     Log.w("AyPhone", "sending ${f.name} failed: $e")
                 }
@@ -107,9 +108,11 @@ object FileSender {
         }
     }
 
-    private fun sendOne(f: Outgoing, input: InputStream, glow: Boolean) {
+    private fun sendOne(f: Outgoing, input: InputStream, glow: Boolean, open: Boolean) {
         val id = UUID.randomUUID().toString()
-        Link.sendNow(msg("fileOffer").put("id", id).put("name", f.name).put("size", f.size).put("mime", f.mime).put("glow", glow))
+        val offer = msg("fileOffer").put("id", id).put("name", f.name).put("size", f.size).put("mime", f.mime).put("glow", glow)
+        if (open) offer.put("action", "open")
+        Link.sendNow(offer)
         val buf = ByteArray(CHUNK)
         var seq = 0
         while (true) {

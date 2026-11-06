@@ -136,7 +136,7 @@ class DeckActivity : ComponentActivity() {
         enableEdgeToEdge()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme(primary = Cyan, background = Color.Transparent, surface = Color.Transparent)) {
+            AyPhoneTheme {
                 DeckScreen()
             }
         }

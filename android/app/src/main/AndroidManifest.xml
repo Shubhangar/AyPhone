@@ -119,6 +119,9 @@
             android:name=".ui.DeckActivity"
             android:exported="false" />
         <activity
+            android:name=".ui.ScanActivity"
+            android:exported="false" />
+        <activity
             android:name=".ui.TrackpadActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />

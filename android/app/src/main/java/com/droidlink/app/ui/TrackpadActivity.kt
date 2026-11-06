@@ -67,7 +67,7 @@ class TrackpadActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme(primary = Cyan, onSurface = Color.White)) {
+            AyPhoneTheme {
                 Box(Modifier.fillMaxSize().background(BackdropBrush)) { Trackpad(::finish) }
             }
         }

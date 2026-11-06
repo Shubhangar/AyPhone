@@ -167,3 +167,16 @@ internal fun SetupRow(step: SetupStep, last: Boolean) {
         if (!last) Box(Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.07f)))
     }
 }
+
+/** The app's dark glass theme with white text, for screens of their own (Deck, Scan, Trackpad). */
+@Composable
+internal fun AyPhoneTheme(content: @Composable () -> Unit) {
+    val colors = androidx.compose.material3.darkColorScheme(
+        primary = Cyan, secondary = Indigo,
+        background = Color.Transparent, surface = Color.Transparent, surfaceVariant = GlassFill,
+        onBackground = Color.White, onSurface = Color.White, outline = Color.White.copy(alpha = 0.35f)
+    )
+    MaterialTheme(colorScheme = colors) {
+        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides Color.White, content = content)
+    }
+}

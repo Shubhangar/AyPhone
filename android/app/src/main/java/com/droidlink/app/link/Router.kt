@@ -74,6 +74,8 @@ object Router {
             "getApps" -> Link.scope.launch { Link.send(Apps.listMessage(ctx)) }
             "launchApp" -> main.post { Apps.launch(ctx, m.optString("pkg")) }
             "dial" -> main.post { Calls.dial(ctx, m.optString("number")) }
+            // "Scan with phone" on the Mac. (Display over other apps lets AyPhone open it from the background.)
+            "scanRequest" -> main.post { com.droidlink.app.ui.ScanActivity.open(ctx, m.optString("action").ifEmpty { null }) }
             "listPhotos" -> Link.scope.launch { Link.send(Photos.listMessage(ctx)) }
             "getPhoto" -> Photos.send(ctx, m.optString("id"))
             "screenshotSync" -> Photos.setScreenshotSync(ctx, m.optBoolean("on"))

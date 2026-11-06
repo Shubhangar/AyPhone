@@ -57,6 +57,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mouse
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SystemUpdate
@@ -157,10 +158,14 @@ internal fun Home(paired: Boolean, steps: List<SetupStep>, actions: HomeActions)
             UpdateCard()
 
             if (paired) {
+                val context = LocalContext.current
                 SectionTitle("Quick actions")
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     ActionTile("Clipboard", "Push to Mac", Icons.Filled.ContentPaste, Modifier.weight(1f), connected, actions.sendClipboard)
                     ActionTile("Files", "Send to Mac · Browse", Icons.Filled.UploadFile, Modifier.weight(1f), connected, actions.sendFiles)
+                    ActionTile("Scan", "Document · Text · Photo", Icons.Filled.DocumentScanner, Modifier.weight(1f), connected) {
+                        ScanActivity.open(context, null)
+                    }
                 }
             }
 

@@ -2,4 +2,6 @@
 <paths>
     <!-- Images copied on the Mac, offered to other apps through the clipboard -->
     <cache-path name="clipboard" path="clipboard/" />
+    <!-- Photos taken for Scan to Mac, before they're read or sent -->
+    <cache-path name="scans" path="scans/" />
 </paths>

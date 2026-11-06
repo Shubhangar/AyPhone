@@ -518,6 +518,30 @@ final class AppState: ObservableObject {
         server.send(m)
     }
 
+    /// Scan with phone: opens the phone's camera in that mode ("document", "text", "photo").
+    func scanWithPhone(_ mode: String) {
+        guard connected else {
+            showToast("Phone not connected", symbol: "exclamationmark.triangle.fill")
+            return
+        }
+        var m = Msg("scanRequest"); m.action = mode
+        server.send(m)
+        showToast("Opening the camera on your phone", symbol: "camera.viewfinder")
+    }
+
+    /// Text or a photo from the phone's scanner: on the clipboard, then pasted into the app in
+    /// front (with Accessibility; otherwise ⌘V does it).
+    private func insertFromPhone(_ what: String, _ put: @escaping () -> Void) {
+        put()
+        guard AXIsProcessTrusted() else {
+            showToast("\(what) from your phone is on the clipboard · ⌘V to paste", symbol: "doc.on.clipboard")
+            return
+        }
+        if let app = frontApp, NSWorkspace.shared.frontmostApplication != app { app.activate() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { Deck.press("cmd+v") }
+        showToast("\(what) pasted from your phone", symbol: "camera.viewfinder")
+    }
+
     /// The app in front on the Mac (not AyPhone itself), for the phone's Deck.
     private var frontApp: NSRunningApplication?
 
@@ -613,6 +637,12 @@ final class AppState: ObservableObject {
             askForPastePermissionOnce()
         case "ping":
             server.send(Msg("pong"))
+        case "insertText":
+            if let text = m.text { insertFromPhone("Text") { self.clipboard.setFromPhone(text) } }
+        case "insertImage":
+            if let b64 = m.data, let data = Data(base64Encoded: b64) {
+                insertFromPhone("Photo") { self.clipboard.setImageFromPhone(data) }
+            }
         case "deckPress":
             if let id = m.id { deckPressed(id) }
         case "battery":

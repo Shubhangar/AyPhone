@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import UniformTypeIdentifiers
 
@@ -31,6 +32,8 @@ final class FileTransfers: ObservableObject {
     private var outgoingQueue: [(id: String, url: URL)] = []
     /// Transfers started from the Files option (both directions), which play the glow.
     private var glowing: Set<String> = []
+    /// Incoming files to open once they're in (scanned documents).
+    private var opening: Set<String> = []
     private var sending = false
     private var incoming: [String: FileHandle] = [:]
 
@@ -101,6 +104,7 @@ final class FileTransfers: ObservableObject {
             guard let handle = try? FileHandle(forWritingTo: url) else { return }
             incoming[id] = handle
             if m.glow == true { glowing.insert(id) }
+            if m.action == "open" { opening.insert(id) }
             transfers.insert(Transfer(id: id, name: url.lastPathComponent, size: m.size ?? 0,
                                       direction: .fromPhone, status: .active, localURL: url), at: 0)
         case "fileChunk":
@@ -112,7 +116,10 @@ final class FileTransfers: ObservableObject {
             try? handle.close()
             update(id) { $0.status = .done; $0.transferred = max($0.transferred, $0.size) }
             let glow = glowing.remove(id) != nil
-            if let url = transfers.first(where: { $0.id == id })?.localURL { onReceived(url, glow) }
+            if let url = transfers.first(where: { $0.id == id })?.localURL {
+                onReceived(url, glow)
+                if opening.remove(id) != nil { NSWorkspace.shared.open(url) }
+            }
         default:
             break
         }

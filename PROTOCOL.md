@@ -64,6 +64,9 @@ The pairing key only opens a session, so frames recorded from one connection can
 | `macBattery` | M→A | `level` (0-100), `charging`: the Mac's battery, on connect and when it changes (not sent by Macs without one) |
 | `macSleep` | M→A | The Mac is going to sleep (also the answer to `hello` while it's only briefly awake in the dark): the phone stops trying until it's back, see Reconnecting |
 | `deck` | M→A | The Deck for the app in front on the Mac: `name`, `pkg` (bundle ID), `on` (it has its own layout), `icon` (96 px PNG, base64), `color` (its main colour, `#RRGGBB`), `deck`: buttons `{id, label, icon, action, section?, style?, hint?}` (`style` is `primary` or `danger`; `hint` is the shortcut, like `⌥⌘K`). Sent on connect and whenever another app comes to the front |
+| `scanRequest` | M→A | `action`: `document`, `text` or `photo`; the phone opens its camera in that mode (Scan with phone) |
+| `insertText` | A→M | `text`: read from a photo on the phone; the Mac puts it on the clipboard and pastes it into the app in front |
+| `insertImage` | A→M | `data` (base64), `mime`: a photo from the phone, pasted into the app in front the same way |
 | `deckPress` | A→M | `id`: a Deck button was tapped; the Mac presses its shortcut (or media/lock action) in that app |
 | `deckDone` | M→A | `id`, `on`: whether the press went through (shortcuts need Accessibility on the Mac) |
 | `macNowPlaying` | M→A | `playing`, `title`, `artist`: what the Mac is playing, on connect and when it changes (read through `/usr/bin/perl`, which macOS lets see it; see `mac/NowPlaying`) |
@@ -89,7 +92,7 @@ The pairing key only opens a session, so frames recorded from one connection can
 | `notificationAction` | M→A | `key`, `index` |
 | `clipboard` | both | `text` |
 | `url` | both | `url` |
-| `fileOffer` | both | `id`, `name`, `size`, `mime`, `glow` (sent from the Files option: the other side plays the transfer glow) |
+| `fileOffer` | both | `id`, `name`, `size`, `mime`, `glow` (sent from the Files option: the other side plays the transfer glow), `action` (`open`: open it once it's in, for a scanned document) |
 | `fileChunk` | both | `id`, `seq`, `data` (base64) |
 | `fileEnd` | both | `id` |
 | `getSmsThreads` | M→A | |
