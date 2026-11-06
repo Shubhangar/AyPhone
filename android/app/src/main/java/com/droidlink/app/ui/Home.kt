@@ -56,7 +56,9 @@ import androidx.compose.material.icons.filled.LaptopMac
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mouse
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.automirrored.filled.VolumeDown
@@ -112,6 +114,7 @@ import com.droidlink.app.feature.ActivityLog
 import com.droidlink.app.feature.MacControl
 import com.droidlink.app.feature.NotificationPause
 import com.droidlink.app.link.Link
+import kotlinx.coroutines.launch
 import com.droidlink.app.link.msg
 import com.droidlink.app.service.MirrorService
 import kotlinx.coroutines.delay
@@ -149,6 +152,8 @@ internal fun Home(paired: Boolean, steps: List<SetupStep>, actions: HomeActions)
             }
 
             Hero(state, paired, macName, macModel, macBattery, transport, actions.pair)
+
+            UpdateCard()
 
             if (paired) {
                 SectionTitle("Quick actions")
@@ -501,6 +506,7 @@ private fun ActivityCard(entries: List<ActivityLog.Entry>) {
 private fun MacRemoteCard() {
     val ctx = LocalContext.current
     val finding by MacControl.finding.collectAsStateWithLifecycle()
+    val nowPlaying by Link.macNowPlaying.collectAsStateWithLifecycle()
     GlassCard(padding = 14) {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             RemoteButton("Lock", Icons.Filled.Lock, false, Modifier.weight(1f)) { MacControl.lock() }
@@ -514,10 +520,22 @@ private fun MacRemoteCard() {
         Spacer(Modifier.height(12.dp))
         Box(Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.07f)))
         Spacer(Modifier.height(8.dp))
+        if (nowPlaying.title.isNotEmpty()) {
+            Text(
+                listOf(nowPlaying.title, nowPlaying.artist).filter { it.isNotEmpty() }.joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall, color = Secondary, maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+        }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
             MediaKey(Icons.Filled.SkipPrevious, "Previous") { MacControl.media("previous") }
             MediaKey(Icons.AutoMirrored.Filled.VolumeDown, "Volume down") { MacControl.media("volumeDown") }
-            MediaKey(Icons.Filled.PlayArrow, "Play or pause", big = true) { MacControl.media("playPause") }
+            MediaKey(
+                if (nowPlaying.playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                if (nowPlaying.playing) "Pause" else "Play", big = true
+            ) { MacControl.media("playPause") }
             MediaKey(Icons.AutoMirrored.Filled.VolumeUp, "Volume up") { MacControl.media("volumeUp") }
             MediaKey(Icons.Filled.SkipNext, "Next") { MacControl.media("next") }
         }
@@ -598,5 +616,39 @@ private fun ToggleTile(label: String, icon: ImageVector, checked: Boolean, enabl
         }
         Spacer(Modifier.height(10.dp))
         Text(label, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+// MARK: Updates
+
+/** "Update available": one tap downloads, checks and installs the new version. */
+@Composable
+private fun UpdateCard() {
+    val ctx = LocalContext.current
+    val release by com.droidlink.app.feature.Updates.available.collectAsStateWithLifecycle()
+    val phase by com.droidlink.app.feature.Updates.phase.collectAsStateWithLifecycle()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val r = release ?: return
+    val busy = phase is com.droidlink.app.feature.Updates.Phase.Downloading || phase is com.droidlink.app.feature.Updates.Phase.Installing
+    GlassCard(padding = 14) {
+        Text("Update available", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(2.dp))
+        Text(
+            when (val p = phase) {
+                com.droidlink.app.feature.Updates.Phase.Downloading -> "Downloading AyPhone ${r.version}…"
+                com.droidlink.app.feature.Updates.Phase.Installing -> "Installing. Tap Update if Android asks."
+                is com.droidlink.app.feature.Updates.Phase.Failed -> p.reason
+                else -> "AyPhone ${r.version} is ready to install."
+            },
+            style = MaterialTheme.typography.bodySmall, color = Secondary
+        )
+        if (!busy) {
+            Spacer(Modifier.height(10.dp))
+            PrimaryButton("Update", Icons.Filled.SystemUpdate) {
+                if (com.droidlink.app.feature.Updates.allowedToInstall(ctx)) {
+                    scope.launch { com.droidlink.app.feature.Updates.install(ctx) }
+                }
+            }
+        }
     }
 }

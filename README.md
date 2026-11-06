@@ -36,9 +36,10 @@ Then follow the **[installation guide](dist/INSTALL.md)**: drag the Mac app to A
 | Verification codes | One-time codes in texts and notifications are copied to the Mac's clipboard as they arrive (Notifications → switch off if you prefer) |
 | Call from the Mac | The call button in a conversation has the phone dial; talk on the phone, or on the Mac with Bluetooth calls |
 | Photos | The phone's latest photos on the Mac (click to bring one over); new screenshots arrive automatically |
-| Phone as a remote | Lock the Mac, make it ring (Find my Mac), control its music and volume, or use the phone as its trackpad and keyboard |
+| Phone as a remote | Lock the Mac, make it ring (Find my Mac), control its music and volume (with what's playing and whether it's paused), or use the phone as its trackpad and keyboard |
 | Battery, Find my phone, open links on the other device | ✅ Battery warnings both ways (low, fully charged); the Mac's battery shows on the phone and its widget |
-| Android widget | The Mac's battery and connection, with Clipboard and Files buttons, on the home screen |
+| Android widget | One row: the Mac's battery and connection with Send files, Lock, Play/Pause and Mute. Stretched to two rows: also Screen share, Trackpad, Find my Mac and big media controls |
+| Updates | Both apps check GitHub for new releases and show "Update available" (and a notification, once per version). One click or tap installs it; only builds signed with the same key are accepted |
 | Connection | One-time QR pairing, AES-256-GCM, Bonjour discovery, USB forwarding turns on automatically when you plug in |
 
 The wire protocol is documented in [PROTOCOL.md](PROTOCOL.md).

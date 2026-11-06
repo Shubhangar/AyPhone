@@ -120,7 +120,8 @@ class LinkService : Service() {
         discovery.listen()
         // Keep the home-screen widget current.
         scope.launch {
-            combine(Link.state, Link.macName, Link.transport, Link.macBattery) { _, _, _, _ -> }
+            combine(Link.state, Link.macName, Link.transport, Link.macBattery, Link.macMuted) { _, _, _, _, _ -> }
+                .combine(Link.macNowPlaying) { _, _ -> }
                 .collect { MacWidget.update(this@LinkService) }
         }
         scope.launch {
@@ -132,6 +133,13 @@ class LinkService : Service() {
                 }
         }
         Link.start()
+        // Look for a new version now and then (Updates.check notifies once per version).
+        scope.launch {
+            while (true) {
+                com.droidlink.app.feature.Updates.check(this@LinkService)
+                kotlinx.coroutines.delay(6 * 3600_000L)
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

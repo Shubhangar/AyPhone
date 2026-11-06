@@ -26,6 +26,9 @@ cp Resources/Info.plist "$APP/Contents/Info.plist"
 # A fresh build number each build, so macOS refreshes cached icons and metadata.
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $(date +%Y%m%d%H%M)" "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+# What the Mac is playing, read from inside /usr/bin/perl (see NowPlaying.swift).
+clang -arch arm64 -arch x86_64 -mmacosx-version-min=14.0 -dynamiclib -fobjc-arc -framework Foundation \
+    NowPlaying/NowPlaying.m -o "$APP/Contents/Resources/NowPlaying.dylib"
 # The same identity every build keeps macOS permissions (Accessibility) across updates; see
 # make-signing-identity.sh. Without it, sign ad hoc.
 SIGN=(--sign -)
@@ -35,6 +38,7 @@ if [ -f "$KEYCHAIN" ]; then
     SIGN=(--sign "AyPhone Local Signing" --keychain "$KEYCHAIN")
 fi
 codesign --force "${SIGN[@]}" "$APP/Contents/MacOS/AyPhoneBluetooth"
+codesign --force "${SIGN[@]}" "$APP/Contents/Resources/NowPlaying.dylib"
 codesign --force "${SIGN[@]}" "$APP"
 
 # Disk image: the app plus an Applications shortcut to drag it onto.

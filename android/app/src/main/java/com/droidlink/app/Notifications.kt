@@ -16,6 +16,8 @@ import java.util.concurrent.atomic.AtomicInteger
 object Notifications {
     private const val STATUS = "status"
     private const val EVENTS = "events"
+    private const val UPDATES = "updates"
+    const val UPDATE_ID = 3
     const val STATUS_ID = 1
     const val MIRROR_ID = 2
     private val nextId = AtomicInteger(100)
@@ -28,6 +30,28 @@ object Notifications {
         nm.createNotificationChannel(
             NotificationChannel(EVENTS, "Files and links from your Mac", NotificationManager.IMPORTANCE_HIGH)
         )
+        nm.createNotificationChannel(
+            NotificationChannel(UPDATES, "AyPhone updates", NotificationManager.IMPORTANCE_DEFAULT)
+        )
+    }
+
+    /** A new version is out: tapping opens AyPhone; Update opens it and starts installing. */
+    fun updateAvailable(ctx: Context, version: String) {
+        val open = PendingIntent.getActivity(ctx, 10, Intent(ctx, com.droidlink.app.ui.MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+        val update = PendingIntent.getActivity(
+            ctx, 11,
+            Intent(ctx, com.droidlink.app.ui.MainActivity::class.java).setAction(com.droidlink.app.ui.MainActivity.ACTION_UPDATE),
+            PendingIntent.FLAG_IMMUTABLE
+        )
+        val n = Notification.Builder(ctx, UPDATES)
+            .setSmallIcon(R.drawable.ic_stat_ayphone)
+            .setContentTitle("AyPhone $version is ready")
+            .setContentText("Update to get the latest fixes and features.")
+            .setContentIntent(open)
+            .addAction(Notification.Action.Builder(null, "Update", update).build())
+            .setAutoCancel(true)
+            .build()
+        ctx.getSystemService(NotificationManager::class.java).notify(UPDATE_ID, n)
     }
 
     fun status(ctx: Context, state: Link.State, macName: String?, transport: String?): Notification {

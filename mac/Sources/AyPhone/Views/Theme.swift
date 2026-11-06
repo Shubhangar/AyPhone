@@ -150,6 +150,8 @@ struct GlassBackground: ViewModifier {
             .overlay(
                 shape.strokeBorder(LinearGradient(colors: [.white.opacity(0.24), .white.opacity(0.05), Theme.cyan.opacity(0.18)],
                                                   startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+                // Just the edge's sheen: clicks go through to the card's buttons.
+                .allowsHitTesting(false)
             )
             .shadow(color: .black.opacity(0.28), radius: 22, y: 10)
     }

@@ -192,7 +192,10 @@ final class AppState: ObservableObject {
     let bluetooth = BluetoothCallAudio()
     let mirror = MirrorSession()
     private let beacon = Beacon()
+    private let nowPlaying = NowPlaying()
     private var bluetoothObserver: AnyCancellable?
+    let updater = Updater()
+    private var updaterObserver: AnyCancellable?
     private let clipboard = ClipboardSync()
     private let notifier = MacNotifier()
     private let callPanelController = CallPanelController()
@@ -362,6 +365,11 @@ final class AppState: ObservableObject {
         }
         bluetooth.start()
         adb.startTracking()
+        updaterObserver = updater.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        updater.onNewRelease = { [weak self] version in self?.notifier.updateAvailable(version) }
+        updater.start()
+        nowPlaying.onChange = { [weak self] _ in self?.sendNowPlaying() }
+        nowPlaying.start()
 
         // Pick up permission changes made in System Settings.
         NotificationCenter.default.addObserver(
@@ -503,6 +511,13 @@ final class AppState: ObservableObject {
         server.send(m)
     }
 
+    /// Whether the Mac is playing, and what, for the phone's play/pause button.
+    private func sendNowPlaying() {
+        let state = nowPlaying.state
+        var m = Msg("macNowPlaying"); m.playing = state.playing; m.title = state.title; m.artist = state.artist
+        server.send(m)
+    }
+
     /// "Phone battery low" once it drops to 15% unplugged, and "fully charged" once it reaches
     /// 100% on the charger (not on every update, and not right after connecting).
     private func phoneBatteryAlerts(before: (level: Int?, charging: Bool)) {
@@ -538,6 +553,7 @@ final class AppState: ObservableObject {
             server.send(ok)
             sendMacBattery(force: true)
             sendMacMuted()
+            sendNowPlaying()
             // Something copied while the phone was away: it gets it now.
             if copyWaitingForPhone && clipboardSyncEnabled {
                 clipboard.resendCurrent()

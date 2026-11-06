@@ -8,6 +8,7 @@ struct MenuBarView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
+            UpdateBanner(compact: true)
 
             if let call = state.currentCall {
                 HStack(spacing: 10) {

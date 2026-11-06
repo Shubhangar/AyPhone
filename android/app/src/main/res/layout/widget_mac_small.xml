@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Home-screen widget, one row: the Mac and four quick actions. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="12dp"
+    android:paddingEnd="12dp">
+        <FrameLayout
+            android:layout_width="42dp"
+            android:layout_height="42dp">
+            <ImageView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/widget_button_bg"
+                android:contentDescription="@null"
+                android:padding="9dp"
+                android:src="@drawable/ic_widget_laptop" />
+        </FrameLayout>
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+            <TextView
+                android:id="@+id/widget_name"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="#FFFFFFFF"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+            <TextView
+                android:id="@+id/widget_status"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="#B3EE90FF"
+                android:textSize="12sp" />
+        </LinearLayout>
+        <TextView
+            android:id="@+id/widget_battery"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+        <ImageView
+            android:id="@+id/widget_files"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/widget_button_bg"
+            android:contentDescription="files"
+            android:padding="9dp"
+            android:src="@drawable/ic_widget_file"
+            android:tint="#FFE7D9FF" />
+        <ImageView
+            android:id="@+id/widget_lock"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/widget_button_bg"
+            android:contentDescription="lock"
+            android:padding="9dp"
+            android:src="@drawable/ic_w_lock"
+            android:tint="#FFE7D9FF" />
+        <ImageView
+            android:id="@+id/widget_play"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/widget_button_bg"
+            android:contentDescription="play"
+            android:padding="9dp"
+            android:src="@drawable/ic_w_play"
+            android:tint="#FFE7D9FF" />
+        <ImageView
+            android:id="@+id/widget_mute"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/widget_button_bg"
+            android:contentDescription="mute"
+            android:padding="9dp"
+            android:src="@drawable/ic_w_volume_up"
+            android:tint="#FFE7D9FF" />
+</LinearLayout>

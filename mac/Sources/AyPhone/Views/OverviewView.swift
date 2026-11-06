@@ -10,6 +10,7 @@ struct OverviewView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 hero
+                UpdateBanner()
                 if state.notificationPermission != .allowed(persistent: true) && state.notificationPermission != .unknown {
                     NotificationPermissionCard()
                         .transition(.move(edge: .top).combined(with: .opacity))

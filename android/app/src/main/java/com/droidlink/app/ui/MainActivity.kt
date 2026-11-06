@@ -49,6 +49,8 @@ import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import com.droidlink.app.feature.CallCompanion
 import com.droidlink.app.feature.ClipboardBridge
 import com.droidlink.app.feature.FileSender
@@ -60,6 +62,11 @@ import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        /** From the update notification's Update button: start installing right away. */
+        const val ACTION_UPDATE = "com.droidlink.app.UPDATE"
+    }
+
     /** What the setup step needs: texts, caller names, calls, and AyPhone's own notifications. */
     private val essentialPermissions = buildList {
         add(Manifest.permission.READ_SMS)
@@ -166,15 +173,27 @@ class MainActivity : ComponentActivity() {
             }
         }
         pickFilesIfAsked()
+        updateIfAsked()
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         pickFilesIfAsked()
+        updateIfAsked()
     }
 
     /** The widget's Files button opens the app straight into the file picker. */
+    private fun updateIfAsked() {
+        if (intent?.action != ACTION_UPDATE) return
+        intent.action = null
+        getSystemService(android.app.NotificationManager::class.java).cancel(com.droidlink.app.Notifications.UPDATE_ID)
+        lifecycleScope.launch {
+            com.droidlink.app.feature.Updates.check(this@MainActivity, force = true)
+            if (com.droidlink.app.feature.Updates.allowedToInstall(this@MainActivity)) com.droidlink.app.feature.Updates.install(this@MainActivity)
+        }
+    }
+
     private fun pickFilesIfAsked() {
         if (intent?.action != MacWidget.ACTION_PICK_FILES) return
         intent.action = null
@@ -188,6 +207,7 @@ class MainActivity : ComponentActivity() {
         // Foreground starts are always allowed, so this also recovers a service the system refused earlier.
         if (Pairing.load(this) != null) LinkService.start(this)
         Link.macNearby()
+        lifecycleScope.launch { com.droidlink.app.feature.Updates.check(this@MainActivity) }
     }
 
     private fun onScanned(text: String) {

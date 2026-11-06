@@ -86,6 +86,10 @@ object Link {
     /** Whether the Mac's sound is muted (its Quick toggle); null until the Mac says. */
     val macMuted = MutableStateFlow<Boolean?>(null)
 
+    /** What the Mac is playing (title and artist may be empty), for the play/pause button. */
+    data class MacNowPlaying(val playing: Boolean, val title: String, val artist: String)
+    val macNowPlaying = MutableStateFlow(MacNowPlaying(false, "", ""))
+
     /** Hosts that accepted a connection but failed the pairing handshake (another computer), with when. */
     private val rejected = HashMap<String, Long>()
     private var lastScan = 0L
@@ -510,6 +514,10 @@ object Link {
                     macAsleep = true
                     toldAsleep = true
                     quietUntil = SystemClock.elapsedRealtime() + 15_000
+                    continue
+                }
+                if (json.optString("type") == "macNowPlaying") {
+                    macNowPlaying.value = MacNowPlaying(json.optBoolean("playing"), json.optString("title"), json.optString("artist"))
                     continue
                 }
                 if (json.optString("type") == "macMuted") {
