@@ -143,6 +143,12 @@ final class AppState: ObservableObject {
     /// Set by the panel's ✕: hide the call panel, whichever kind, until this call is over.
     @Published private var callPanelDismissed = false
     /// Copy one-time codes from phone notifications and texts to the Mac's clipboard.
+    /// "While you were away" summaries (Apple's on-device model). Off unless switched on.
+    @Published var awaySummaryEnabled = UserDefaults.standard.bool(forKey: "awaySummary") {
+        didSet { UserDefaults.standard.set(awaySummaryEnabled, forKey: "awaySummary") }
+    }
+    private let away = AwaySummary()
+
     @Published var copyCodes = UserDefaults.standard.object(forKey: "copyCodes") as? Bool ?? true {
         didSet { UserDefaults.standard.set(copyCodes, forKey: "copyCodes") }
     }
@@ -366,6 +372,9 @@ final class AppState: ObservableObject {
         bluetooth.start()
         adb.startTracking()
         updaterObserver = updater.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        away.enabled = { [weak self] in self?.awaySummaryEnabled == true }
+        away.showAll = { [weak self] in self?.showMainWindow() }
+        away.start()
         updater.onNewRelease = { [weak self] version in self?.notifier.updateAvailable(version) }
         updater.start()
         nowPlaying.onChange = { [weak self] _ in self?.sendNowPlaying() }
@@ -850,6 +859,8 @@ final class AppState: ObservableObject {
             showToast("Code \(code) copied · ⌘V to paste", symbol: "key.fill")
         }
         if mirrorNotifications && !isCall && shouldAlert && !isMuted(n.pkg) { notifier.show(n, replacing: isUpdate) }
+        // Kept (only while the Mac is locked) for "While you were away".
+        if shouldAlert && !isCall && !isMuted(n.pkg) { away.record(app: n.app, title: n.title, text: n.text) }
     }
 
     private func receivedCall(_ m: Msg) {

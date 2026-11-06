@@ -63,6 +63,15 @@ struct NotificationControls: View {
                 Toggle(isOn: $state.copyCodes) {
                     Label("Copy verification codes to the clipboard", systemImage: "key")
                 }
+                if AwaySummary.isAvailable {
+                    Toggle(isOn: $state.awaySummaryEnabled) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Label("While you were away", systemImage: "sparkles")
+                            Text("When you unlock your Mac, a short summary of what came in on your phone. Made by Apple Intelligence on this Mac; nothing leaves it.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
                 Toggle(isOn: $state.muteAppsOnThisMac) {
                     VStack(alignment: .leading, spacing: 2) {
                         Label("Skip apps that are also on this Mac", systemImage: "macbook.and.iphone")
