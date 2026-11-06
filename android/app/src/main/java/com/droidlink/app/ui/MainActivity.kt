@@ -155,6 +155,7 @@ class MainActivity : ComponentActivity() {
         onboarded = prefs.getBoolean("onboarded", false) ||
             (Pairing.load(this) != null && setupSteps().filter { !it.optional }.all { it.done })
         if (onboarded) prefs.edit().putBoolean("onboarded", true).apply()
+        com.droidlink.app.feature.LastReceived.load(this)
         setContent {
             // The glass look needs the dark, colourful backdrop, so the app is always dark.
             val colors = darkColorScheme(

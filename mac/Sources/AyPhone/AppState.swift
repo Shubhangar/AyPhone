@@ -145,7 +145,10 @@ final class AppState: ObservableObject {
     /// Copy one-time codes from phone notifications and texts to the Mac's clipboard.
     /// "While you were away" summaries (Apple's on-device model). Off unless switched on.
     @Published var awaySummaryEnabled = UserDefaults.standard.bool(forKey: "awaySummary") {
-        didSet { UserDefaults.standard.set(awaySummaryEnabled, forKey: "awaySummary") }
+        didSet {
+            UserDefaults.standard.set(awaySummaryEnabled, forKey: "awaySummary")
+            sendFeatures()
+        }
     }
     private let away = AwaySummary()
 
@@ -551,6 +554,13 @@ final class AppState: ObservableObject {
         showToast("\(what) pasted from your phone", symbol: "camera.viewfinder")
     }
 
+    /// What the phone's Settings can switch here: "While you were away" (offered only where the
+    /// on-device model is available; `on`) and whether it's switched on (`alert`).
+    private func sendFeatures() {
+        var m = Msg("macFeatures"); m.on = AwaySummary.isAvailable; m.alert = awaySummaryEnabled
+        server.send(m)
+    }
+
     /// The app in front on the Mac (not AyPhone itself), for the phone's Deck.
     private var frontApp: NSRunningApplication?
 
@@ -633,6 +643,7 @@ final class AppState: ObservableObject {
             sendMacMuted()
             sendNowPlaying()
             sendDeck()
+            sendFeatures()
             // The Pad's drawing area takes the screen's shape.
             if let frame = NSScreen.screens.first?.frame {
                 var screen = Msg("macScreen"); screen.width = Int(frame.width); screen.height = Int(frame.height)
@@ -651,6 +662,8 @@ final class AppState: ObservableObject {
             askForPastePermissionOnce()
         case "ping":
             server.send(Msg("pong"))
+        case "awaySummary":
+            if AwaySummary.isAvailable { awaySummaryEnabled = m.on ?? false }
         case "padPointer":
             Pad.pointer(state: m.state ?? "move", points: m.points ?? [])
         case "ink":

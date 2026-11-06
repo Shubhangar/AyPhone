@@ -130,9 +130,36 @@ internal class HomeActions(
     val unpair: () -> Unit,
 )
 
-/** The home screen once onboarding is done. */
+/** The app once onboarding is done: Home, Control, Send and Settings tabs. */
 @Composable
 internal fun Home(paired: Boolean, steps: List<SetupStep>, actions: HomeActions) {
+    var tab by rememberSaveable { mutableStateOf(Tab.Home) }
+    val shown = if (paired) tab else Tab.Home
+
+    Scaffold(containerColor = Color.Transparent, bottomBar = { if (paired) TabBar(tab) { tab = it } }) { padding ->
+        AnimatedContent(shown, transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(150)) }, label = "tab") { current ->
+            Column(
+                Modifier
+                    .padding(padding)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                when (current) {
+                    Tab.Home -> HomeTab(paired, steps, actions) { tab = it }
+                    Tab.Control -> ControlTab()
+                    Tab.Send -> SendTab(actions)
+                    Tab.Settings -> SettingsTab(paired, steps, actions)
+                }
+            }
+        }
+    }
+}
+
+/** The Mac (the hero), then what you'll likely do next: shortcuts, the one thing worth knowing,
+ *  what it's playing, and the last file it sent. */
+@Composable
+private fun HomeTab(paired: Boolean, steps: List<SetupStep>, actions: HomeActions, goTo: (Tab) -> Unit) {
     val state by Link.state.collectAsStateWithLifecycle()
     val macName by Link.macName.collectAsStateWithLifecycle()
     val macModel by Link.macModel.collectAsStateWithLifecycle()
@@ -140,70 +167,23 @@ internal fun Home(paired: Boolean, steps: List<SetupStep>, actions: HomeActions)
     val transport by Link.transport.collectAsStateWithLifecycle()
     val connected = state == Link.State.Connected
 
-    Scaffold(containerColor = Color.Transparent) { padding ->
-        Column(
-            Modifier
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Image(painterResource(R.drawable.ic_logo), contentDescription = null, modifier = Modifier.size(38.dp))
-                Spacer(Modifier.width(10.dp))
-                Text("AyPhone", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-            }
-
-            Hero(state, paired, macName, macModel, macBattery, transport, actions.pair)
-
-            UpdateCard()
-
-            if (paired) {
-                val context = LocalContext.current
-                SectionTitle("Quick actions")
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ActionTile("Clipboard", "Push to Mac", Icons.Filled.ContentPaste, Modifier.weight(1f), connected, actions.sendClipboard)
-                    ActionTile("Files", "Send to Mac · Browse", Icons.Filled.UploadFile, Modifier.weight(1f), connected, actions.sendFiles)
-                    ActionTile("Scan", "Document · Text · Photo", Icons.Filled.DocumentScanner, Modifier.weight(1f), connected) {
-                        ScanActivity.open(context, null)
-                    }
-                }
-            }
-
-            SectionTitle("Setup")
-            SetupSection(steps)
-
-            val activity by ActivityLog.entries.collectAsStateWithLifecycle()
-            if (paired && activity.isNotEmpty()) {
-                SectionTitle("Activity")
-                ActivityCard(activity)
-            }
-
-            AnimatedVisibility(paired && connected, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
-                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    SectionTitle("Your Mac")
-                    MacRemoteCard()
-                }
-            }
-
-            if (paired) {
-                SectionTitle("Quick toggles")
-                QuickToggles(connected)
-            }
-
-            AnimatedVisibility(paired) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                    TextButton(onClick = actions.reconnect) { Text("Reconnect") }
-                    TextButton(onClick = actions.unpair) { Text("Unpair", color = MaterialTheme.colorScheme.error) }
-                }
-            }
-            Text(
-                "Clipboard: copy here, then press ⌘V on your Mac to paste it (keep the phone unlocked). Copies on the Mac arrive here automatically.",
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.55f)
-            )
-        }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Image(painterResource(R.drawable.ic_logo), contentDescription = null, modifier = Modifier.size(38.dp))
+        Spacer(Modifier.width(10.dp))
+        Text("AyPhone", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
     }
+
+    Hero(state, paired, macName, macModel, macBattery, transport, actions.pair)
+
+    if (!paired) {
+        SectionTitle("Setup")
+        SetupSection(steps)
+        return
+    }
+    Shortcuts(actions, connected)
+    SmartCard(steps, goTo)
+    NowPlayingCard()
+    LastFromMac()
 }
 
 // MARK: Hero
@@ -381,7 +361,7 @@ private fun BatteryArc(battery: Link.MacBattery, modifier: Modifier) {
 
 /** A quick action with a glowing violet edge; the arrow nudges forward when pressed. */
 @Composable
-private fun ActionTile(title: String, subtitle: String, icon: ImageVector, modifier: Modifier, enabled: Boolean, onClick: () -> Unit) {
+internal fun ActionTile(title: String, subtitle: String, icon: ImageVector, modifier: Modifier, enabled: Boolean, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.95f else 1f, spring(Spring.DampingRatioMediumBouncy), label = "press")
@@ -423,7 +403,7 @@ private fun ActionTile(title: String, subtitle: String, icon: ImageVector, modif
 /** "Setup complete" with the list behind the gear once everything needed is done, or the
  *  list itself (with progress) while steps are left. */
 @Composable
-private fun SetupSection(steps: List<SetupStep>) {
+internal fun SetupSection(steps: List<SetupStep>) {
     val required = steps.filter { !it.optional }
     val done = required.count { it.done }
     val complete = done == required.size
@@ -471,7 +451,7 @@ private fun SetupSection(steps: List<SetupStep>) {
 // MARK: Activity
 
 @Composable
-private fun ActivityCard(entries: List<ActivityLog.Entry>) {
+internal fun ActivityCard(entries: List<ActivityLog.Entry>) {
     // Re-read the clock now and then so "2 min ago" stays true.
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
@@ -508,55 +488,8 @@ private fun ActivityCard(entries: List<ActivityLog.Entry>) {
 
 // MARK: Your Mac
 
-/** The phone as a remote for the Mac: lock it, find it, use it as a trackpad, control music. */
 @Composable
-private fun MacRemoteCard() {
-    val ctx = LocalContext.current
-    val finding by MacControl.finding.collectAsStateWithLifecycle()
-    val nowPlaying by Link.macNowPlaying.collectAsStateWithLifecycle()
-    GlassCard(padding = 14) {
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            RemoteButton("Lock", Icons.Filled.Lock, false, Modifier.weight(1f)) { MacControl.lock() }
-            RemoteButton(if (finding) "Stop" else "Find", Icons.Filled.NotificationsActive, finding, Modifier.weight(1f)) {
-                MacControl.find(!finding)
-            }
-            RemoteButton("Trackpad", Icons.Filled.Mouse, false, Modifier.weight(1f)) {
-                ctx.startActivity(android.content.Intent(ctx, TrackpadActivity::class.java))
-            }
-            RemoteButton("Deck", Icons.Filled.Apps, false, Modifier.weight(1f)) {
-                ctx.startActivity(android.content.Intent(ctx, DeckActivity::class.java))
-            }
-            RemoteButton("Pad", Icons.Filled.Draw, false, Modifier.weight(1f)) {
-                ctx.startActivity(android.content.Intent(ctx, PadActivity::class.java))
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.07f)))
-        Spacer(Modifier.height(8.dp))
-        if (nowPlaying.title.isNotEmpty()) {
-            Text(
-                listOf(nowPlaying.title, nowPlaying.artist).filter { it.isNotEmpty() }.joinToString(" · "),
-                style = MaterialTheme.typography.bodySmall, color = Secondary, maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-            )
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-            MediaKey(Icons.Filled.SkipPrevious, "Previous") { MacControl.media("previous") }
-            MediaKey(Icons.AutoMirrored.Filled.VolumeDown, "Volume down") { MacControl.media("volumeDown") }
-            MediaKey(
-                if (nowPlaying.playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                if (nowPlaying.playing) "Pause" else "Play", big = true
-            ) { MacControl.media("playPause") }
-            MediaKey(Icons.AutoMirrored.Filled.VolumeUp, "Volume up") { MacControl.media("volumeUp") }
-            MediaKey(Icons.Filled.SkipNext, "Next") { MacControl.media("next") }
-        }
-    }
-}
-
-@Composable
-private fun RemoteButton(label: String, icon: ImageVector, active: Boolean, modifier: Modifier, onClick: () -> Unit) {
+internal fun RemoteButton(label: String, icon: ImageVector, active: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.9f else 1f, spring(Spring.DampingRatioMediumBouncy), label = "press")
@@ -578,7 +511,7 @@ private fun RemoteButton(label: String, icon: ImageVector, active: Boolean, modi
 }
 
 @Composable
-private fun MediaKey(icon: ImageVector, description: String, big: Boolean = false, onClick: () -> Unit) {
+internal fun MediaKey(icon: ImageVector, description: String, big: Boolean = false, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.82f else 1f, spring(Spring.DampingRatioHighBouncy), label = "press")
@@ -596,7 +529,7 @@ private fun MediaKey(icon: ImageVector, description: String, big: Boolean = fals
 // MARK: Quick toggles
 
 @Composable
-private fun QuickToggles(connected: Boolean) {
+internal fun QuickToggles(connected: Boolean) {
     val ctx = LocalContext.current
     val mirroring by MirrorService.active.collectAsStateWithLifecycle()
     val paused by NotificationPause.paused.collectAsStateWithLifecycle()
@@ -636,7 +569,7 @@ private fun ToggleTile(label: String, icon: ImageVector, checked: Boolean, enabl
 
 /** "Update available": one tap downloads, checks and installs the new version. */
 @Composable
-private fun UpdateCard() {
+internal fun UpdateCard() {
     val ctx = LocalContext.current
     val release by com.droidlink.app.feature.Updates.available.collectAsStateWithLifecycle()
     val phase by com.droidlink.app.feature.Updates.phase.collectAsStateWithLifecycle()

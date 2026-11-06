@@ -20,9 +20,14 @@ import java.util.UUID
 /** Files from the Mac land in Downloads/AyPhone. Called only from the socket reader thread. */
 object FileReceiver {
     /** [glow]: the Mac sent it from its Files option, so the transfer glow plays here. */
-    private class Incoming(val uri: Uri, val out: OutputStream, val name: String, val mime: String, val glow: Boolean)
+    private class Incoming(val uri: Uri, val out: OutputStream, val name: String, val mime: String, val glow: Boolean, val size: Long) {
+        var received = 0L
+    }
 
     private val incoming = HashMap<String, Incoming>()
+
+    /** A file arriving now: its name and how far along (0…1), for the home screen. */
+    val arriving = kotlinx.coroutines.flow.MutableStateFlow<Pair<String, Float>?>(null)
 
     fun handle(ctx: Context, m: JSONObject) {
         val id = m.optString("id")
@@ -39,15 +44,23 @@ object FileReceiver {
                 }
                 val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return
                 val out = resolver.openOutputStream(uri)?.buffered(256 * 1024) ?: return
-                incoming[id] = Incoming(uri, out, name, mime, m.optBoolean("glow"))
+                incoming[id] = Incoming(uri, out, name, mime, m.optBoolean("glow"), m.optLong("size", -1))
+                arriving.value = name to 0f
             }
-            "fileChunk" -> incoming[id]?.out?.write(Base64.decode(m.optString("data"), Base64.DEFAULT))
+            "fileChunk" -> incoming[id]?.let { f ->
+                val bytes = Base64.decode(m.optString("data"), Base64.DEFAULT)
+                f.out.write(bytes)
+                f.received += bytes.size
+                if (f.size > 0) arriving.value = f.name to (f.received.toFloat() / f.size).coerceIn(0f, 1f)
+            }
             "fileEnd" -> {
                 val f = incoming.remove(id) ?: return
                 f.out.close()
                 resolver.update(f.uri, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
                 Notifications.showFile(ctx, f.uri, f.name, f.mime)
                 ActivityLog.add("Received from Mac", f.name)
+                LastReceived.save(ctx, f.name, f.uri, f.mime)
+                arriving.value = null
                 if (f.glow) com.droidlink.app.ui.TransferGlow.show(ctx, receiving = true)
             }
         }
@@ -55,6 +68,7 @@ object FileReceiver {
 
     /** Deletes half-received files after a disconnect. */
     fun abortAll(ctx: Context) {
+        arriving.value = null
         for (f in incoming.values) {
             try { f.out.close() } catch (_: Exception) {}
             try { ctx.contentResolver.delete(f.uri, null, null) } catch (_: Exception) {}
@@ -132,5 +146,27 @@ object FileSender {
         }
         Link.sendNow(msg("fileEnd").put("id", id))
         ActivityLog.add("Sent to Mac", f.name)
+    }
+}
+
+/** The last file the Mac sent, for "Last from your Mac" on the home screen. */
+object LastReceived {
+    class File(val name: String, val uri: Uri, val mime: String, val at: Long)
+
+    private const val PREFS = "lastReceived"
+    val latest = kotlinx.coroutines.flow.MutableStateFlow<File?>(null)
+
+    fun save(ctx: Context, name: String, uri: Uri, mime: String) {
+        val at = System.currentTimeMillis()
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString("name", name).putString("uri", uri.toString()).putString("mime", mime).putLong("at", at).apply()
+        latest.value = File(name, uri, mime, at)
+    }
+
+    fun load(ctx: Context) {
+        val p = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val name = p.getString("name", null) ?: return
+        val uri = p.getString("uri", null) ?: return
+        latest.value = File(name, Uri.parse(uri), p.getString("mime", null) ?: "*/*", p.getLong("at", 0))
     }
 }

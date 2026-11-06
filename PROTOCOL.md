@@ -65,6 +65,8 @@ The pairing key only opens a session, so frames recorded from one connection can
 | `macSleep` | M→A | The Mac is going to sleep (also the answer to `hello` while it's only briefly awake in the dark): the phone stops trying until it's back, see Reconnecting |
 | `deck` | M→A | The Deck for the app in front on the Mac: `name`, `pkg` (bundle ID), `on` (it has its own layout), `icon` (96 px PNG, base64), `color` (its main colour, `#RRGGBB`), `deck`: buttons `{id, label, icon, action, section?, style?, hint?}` (`style` is `primary` or `danger`; `hint` is the shortcut, like `⌥⌘K`). Sent on connect and whenever another app comes to the front |
 | `scanRequest` | M→A | `action`: `document`, `text` or `photo`; the phone opens its camera in that mode (Scan with phone) |
+| `macFeatures` | M→A | `on`: the Mac can make "While you were away" summaries (Apple Intelligence); `alert`: they're switched on. On connect and when the switch changes |
+| `awaySummary` | A→M | `on`: switch "While you were away" on or off from the phone |
 | `macScreen` | M→A | `width`, `height`: the Mac's main screen in points, for the Pad's drawing area (on connect) |
 | `padPointer` | A→M | `state` (`down`, `move`, `up`), `points`: x, y, pressure triples in 0…1 of the Mac's screen; the Mac clicks and drags there (Pad → Draw) |
 | `padKeys` | A→M | `action`: `cmd+z` or `cmd+shift+z`, Undo and Redo in the app being drawn in |
