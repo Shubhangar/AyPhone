@@ -120,6 +120,8 @@ class MainActivity : ComponentActivity() {
     private var refreshTick by mutableIntStateOf(0)
     /** Whether the first-run onboarding has been finished (or wasn't needed). */
     private var onboarded by mutableStateOf(false)
+    /** The "What's new" tour, once after an update (or opened from Settings). */
+    private var showWhatsNew by mutableStateOf(false)
 
     private val scanner = registerForActivityResult(ScanContract()) { result ->
         result.contents?.let(::onScanned)
@@ -156,6 +158,7 @@ class MainActivity : ComponentActivity() {
             (Pairing.load(this) != null && setupSteps().filter { !it.optional }.all { it.done })
         if (onboarded) prefs.edit().putBoolean("onboarded", true).apply()
         com.droidlink.app.feature.LastReceived.load(this)
+        showWhatsNew = onboarded && WhatsNew.due(this)
         setContent {
             // The glass look needs the dark, colourful backdrop, so the app is always dark.
             val colors = darkColorScheme(
@@ -296,11 +299,16 @@ class MainActivity : ComponentActivity() {
         val macName by Link.macName.collectAsStateWithLifecycle()
 
         AnimatedContent(
-            targetState = onboarded,
+            targetState = if (showWhatsNew) null else onboarded,
             transitionSpec = { fadeIn(tween(400)) togetherWith fadeOut(tween(250)) },
             label = "onboarding"
         ) { done ->
-            if (done) {
+            if (done == null) {
+                WhatsNewTour {
+                    WhatsNew.markSeen(this@MainActivity)
+                    showWhatsNew = false
+                }
+            } else if (done) {
                 Home(
                     paired, steps,
                     HomeActions(
@@ -309,11 +317,14 @@ class MainActivity : ComponentActivity() {
                         sendFiles = { filePicker.launch(arrayOf("*/*")) },
                         reconnect = { Link.restart() },
                         unpair = ::unpair,
+                        whatsNew = { showWhatsNew = true },
                     )
                 )
             } else {
                 Onboarding(paired, macName, steps, onPair = ::startPairing) {
                     prefs.edit().putBoolean("onboarded", true).apply()
+                    // Onboarding covers what's new for a fresh install.
+                    WhatsNew.markSeen(this@MainActivity)
                     onboarded = true
                 }
             }

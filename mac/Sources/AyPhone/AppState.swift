@@ -379,6 +379,10 @@ final class AppState: ObservableObject {
         away.showAll = { [weak self] in self?.showMainWindow() }
         away.start()
         updater.onNewRelease = { [weak self] version in self?.notifier.updateAvailable(version) }
+        // After the launch animation: what's new, if AyPhone was just updated.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            MainActor.assumeIsolated { if let self { WhatsNew.showIfDue(state: self) } }
+        }
         updater.start()
         nowPlaying.onChange = { [weak self] _ in self?.sendNowPlaying() }
         frontApp = NSWorkspace.shared.frontmostApplication.flatMap { $0.bundleIdentifier == Bundle.main.bundleIdentifier ? nil : $0 }

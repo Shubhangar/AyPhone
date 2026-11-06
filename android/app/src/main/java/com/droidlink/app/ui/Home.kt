@@ -128,6 +128,8 @@ internal class HomeActions(
     val sendFiles: () -> Unit,
     val reconnect: () -> Unit,
     val unpair: () -> Unit,
+    /** Opens the "What's new" tour again. */
+    val whatsNew: () -> Unit,
 )
 
 /** The app once onboarding is done: Home, Control, Send and Settings tabs. */

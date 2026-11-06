@@ -544,6 +544,7 @@ internal fun SettingsTab(paired: Boolean, steps: List<SetupStep>, actions: HomeA
                 if (Updates.available.value == null) Toast.makeText(ctx, "You have the latest version", Toast.LENGTH_SHORT).show()
             }
         }) { Text("Check for updates", color = Cyan) }
+        TextButton(onClick = actions.whatsNew) { Text("What's new", color = Cyan) }
     }
     UpdateCard()
 }

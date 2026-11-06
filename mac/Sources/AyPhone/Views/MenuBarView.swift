@@ -104,6 +104,7 @@ struct MenuBarView: View {
             Divider().opacity(0.5)
             HStack {
                 Button("Open AyPhone") { state.showMainWindow() }
+                Button("What's new") { WhatsNew.show(state: state) }
                     .fontWeight(.medium)
                     .foregroundStyle(Theme.cyan)
                 Spacer()
