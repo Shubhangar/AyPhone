@@ -877,7 +877,7 @@ final class AppState: ObservableObject {
         }
         if mirrorNotifications && !isCall && shouldAlert && !isMuted(n.pkg) { notifier.show(n, replacing: isUpdate) }
         // Kept (only while the Mac is locked) for "While you were away".
-        if shouldAlert && !isCall && !isMuted(n.pkg) { away.record(app: n.app, title: n.title, text: n.text) }
+        if shouldAlert && !isCall && !isMuted(n.pkg) { away.record(n, category: m.category) }
     }
 
     private func receivedCall(_ m: Msg) {

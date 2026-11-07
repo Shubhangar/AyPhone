@@ -31,6 +31,8 @@ struct Msg: Codable {
     /// A call notification from any app (dialer, WhatsApp…), and whether it's ringing.
     var call: Bool?
     var callType: String?
+    /// The app's Android notification category (msg, email, missed_call, event, reminder, promo…).
+    var category: String?
 
     // Battery
     var level: Int?

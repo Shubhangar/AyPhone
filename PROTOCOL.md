@@ -91,7 +91,7 @@ The pairing key only opens a session, so frames recorded from one connection can
 | `photos` | A→M | `photos` [{`id`,`name`,`date` (ms),`thumb` (base64 JPEG, 240 px),`screenshot`}], `on` (screenshots sent automatically), `action: permission` when not allowed |
 | `getPhoto` | M→A | `id`: the phone sends that photo like any file |
 | `screenshotSync` | M→A | `on`: send each new screenshot to the Mac (default on) |
-| `notification` | A→M | `key`, `pkg`, `app`, `title`, `text`, `time` (ms), `canReply`, `actions` [String], `icon` (base64 PNG), `silent` (true when re-sent on connect), `alert` (true when this post or update carries a new incoming message) |
+| `notification` | A→M | `key`, `pkg`, `app`, `title`, `text`, `time` (ms), `canReply`, `actions` [String], `icon` (base64 PNG), `silent` (true when re-sent on connect), `alert` (true when this post or update carries a new incoming message), `category` (the Android notification category, e.g. `msg`, `email`, `missed_call`, `event`, `reminder`, `promo`; absent when the app sets none) |
 | `notificationRemoved` | A→M | `key` |
 | `notificationReply` | M→A | `key`, `text` |
 | `notificationDismiss` | M→A | `key` |

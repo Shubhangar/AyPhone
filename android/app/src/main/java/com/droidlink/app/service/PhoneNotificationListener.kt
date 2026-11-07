@@ -196,6 +196,9 @@ class PhoneNotificationListener : NotificationListenerService() {
             .put("icon", appIcon(sbn.packageName))
             .put("silent", silent && !isCall(sbn))
             .apply { if (isCall(sbn)) put("call", true).put("callType", callType(n)) }
+            // What kind of notification the app says it is (msg, missed_call, event, promo…), so the
+            // Mac can tell a message from a reminder without guessing from the text.
+            .apply { n.category?.let { put("category", it) } }
     }
 
     private fun appLabel(pkg: String): String = labelCache.getOrPut(pkg) {
