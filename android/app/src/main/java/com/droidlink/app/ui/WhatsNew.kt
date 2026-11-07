@@ -48,6 +48,9 @@ import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -98,7 +101,7 @@ internal fun WhatsNewTour(done: () -> Unit) {
                     contentAlignment = Alignment.Center
                 ) { page.art(t) }
                 Spacer(Modifier.height(28.dp))
-                Text(page.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                Text(page.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Color.White, textAlign = TextAlign.Center)
                 Spacer(Modifier.height(10.dp))
                 Text(page.body, style = MaterialTheme.typography.bodyLarge, color = Secondary, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 8.dp))
             }
@@ -136,69 +139,85 @@ private fun whatsNewPages(): List<TourPage> = androidx.compose.runtime.remember 
 private val Ink = Color.White
 private val Faint = Color.White.copy(alpha = 0.12f)
 
+/** A canvas drawn in dp: (0,0) to (w,h), so the art is the same size on every screen. */
+@Composable
+private fun Art(w: Int, h: Int, draw: DrawScope.(Size) -> Unit) {
+    Canvas(Modifier.size(w.dp, h.dp)) {
+        scale(density, density, pivot = Offset.Zero) { draw(Size(w.toFloat(), h.toFloat())) }
+    }
+}
+
 @Composable
 private fun TabsArt(t: Float) {
     val active = (t * 4).toInt().coerceIn(0, 3)
-    Canvas(Modifier.size(240.dp, 200.dp)) {
-        roundRect(Offset(40f, 10f), Size(size.width - 80f, size.height - 20f), 36f, Color(0xFF221D3D))
-        val bar = Offset(52f, size.height - 74f)
-        roundRect(bar, Size(size.width - 104f, 52f), 20f, Color(0xFF1C1834))
-        val slot = (size.width - 104f) / 4
+    Art(240, 220) { s ->
+        // A phone with the four tabs at the bottom; the page above changes with the tab.
+        val phone = Offset(50f, 10f)
+        val pw = s.width - 100f
+        roundRect(phone, Size(pw, 200f), 26f, Color(0xFF221D3D))
+        for (row in 0 until 3) roundRect(Offset(phone.x + 14f, 30f + row * 30f), Size((pw - 28f) * (0.5f + 0.2f * ((row + active) % 3)), 18f), 9f, Faint)
+        val bar = Offset(phone.x + 8f, 150f)
+        roundRect(bar, Size(pw - 16f, 50f), 18f, Color(0xFF1C1834))
+        val slot = (pw - 16f) / 4
         for (i in 0..3) {
             val cx = bar.x + slot * i + slot / 2
-            if (i == active) roundRect(Offset(cx - 26f, bar.y + 8f), Size(52f, 22f), 11f, Indigo)
-            drawCircle(if (i == active) Ink else Ink.copy(alpha = 0.4f), 7f, Offset(cx, bar.y + 19f))
-            roundRect(Offset(cx - 14f, bar.y + 36f), Size(28f, 5f), 2f, if (i == active) Ink else Ink.copy(alpha = 0.3f))
+            if (i == active) roundRect(Offset(cx - 14f, bar.y + 8f), Size(28f, 20f), 10f, Indigo)
+            drawCircle(if (i == active) Ink else Ink.copy(alpha = 0.4f), 5f, Offset(cx, bar.y + 18f))
+            roundRect(Offset(cx - 10f, bar.y + 34f), Size(20f, 4f), 2f, if (i == active) Ink else Ink.copy(alpha = 0.3f))
         }
-        // The page above changes with the tab.
-        val top = 34f
-        for (row in 0 until 3) roundRect(Offset(64f, top + row * 34f), Size((size.width - 128f) * (0.5f + 0.15f * ((row + active) % 3)), 22f), 10f, Faint)
     }
 }
 
 @Composable
 private fun DeckArt(t: Float) {
     val lit = (t * 9).toInt().coerceIn(0, 8)
-    Canvas(Modifier.size(220.dp, 220.dp)) {
-        roundRect(Offset(70f, 6f), Size(40f, 40f), 12f, Color(0xFFA259FF))
-        roundRect(Offset(124f, 16f), Size(120f, 18f), 9f, Ink.copy(alpha = 0.7f))
-        val cell = (size.width - 60f) / 3
+    Art(220, 230) { s ->
+        // The app in front on the Mac, then its buttons; one lights up at a time.
+        roundRect(Offset(30f, 8f), Size(34f, 34f), 10f, Color(0xFFA259FF))
+        roundRect(Offset(76f, 18f), Size(100f, 14f), 7f, Ink.copy(alpha = 0.7f))
+        val cell = (s.width - 40f) / 3
         for (i in 0 until 9) {
-            val x = 30f + (i % 3) * cell
-            val y = 66f + (i / 3) * cell * 0.92f
+            val x = 20f + (i % 3) * cell
+            val y = 56f + (i / 3) * 58f
             val on = i == lit
-            roundRect(Offset(x + 6f, y), Size(cell - 12f, cell * 0.92f - 12f), 26f, if (on) Indigo else Faint)
-            drawCircle(if (on) Ink else Ink.copy(alpha = 0.5f), 11f, Offset(x + cell / 2, y + cell * 0.36f))
+            roundRect(Offset(x + 5f, y), Size(cell - 10f, 50f), 16f, if (on) Indigo else Faint)
+            drawCircle(if (on) Ink else Ink.copy(alpha = 0.5f), 8f, Offset(x + cell / 2, y + 25f))
         }
     }
 }
 
 @Composable
 private fun ScanArt(t: Float) {
-    Canvas(Modifier.size(260.dp, 200.dp)) {
-        // A page under the phone's camera, a scan line passing over it, then off to the Mac.
-        val page = Offset(30f, 30f)
-        roundRect(page, Size(130f, 170f), 10f, Color(0xFFF4F1FA))
-        for (l in 0 until 6) roundRect(Offset(page.x + 16f, page.y + 24f + l * 22f), Size(98f - (l % 2) * 30f, 8f), 4f, Color(0xFFB9B2CF))
-        val scan = page.y + (t.coerceAtMost(0.6f) / 0.6f) * 170f
-        if (t < 0.6f) drawLine(Cyan, Offset(page.x - 8f, scan), Offset(page.x + 138f, scan), 5f, StrokeCap.Round)
-        val fly = ((t - 0.6f) / 0.4f).coerceIn(0f, 1f)
-        val mac = Offset(size.width - 150f, 60f)
-        roundRect(mac, Size(130f, 86f), 10f, Color(0xFF2A2547))
-        roundRect(Offset(mac.x - 10f, mac.y + 86f), Size(150f, 12f), 6f, Color(0xFF3A3360))
+    Art(260, 200) { s ->
+        // A page, a scan line passing over it, then the page flies to the Mac.
+        val page = Offset(20f, 30f)
+        val ps = Size(110f, 140f)
+        roundRect(page, ps, 8f, Color(0xFFF4F1FA))
+        for (l in 0 until 6) roundRect(Offset(page.x + 14f, page.y + 20f + l * 19f), Size(82f - (l % 2) * 26f, 7f), 3.5f, Color(0xFFB9B2CF))
+        if (t < 0.6f) {
+            val scan = page.y + (t / 0.6f) * ps.height
+            drawLine(Cyan, Offset(page.x - 6f, scan), Offset(page.x + ps.width + 6f, scan), 4f, StrokeCap.Round)
+        }
+        val mac = Offset(s.width - 120f, 56f)
+        roundRect(mac, Size(108f, 72f), 8f, Color(0xFF2A2547))
+        roundRect(Offset(mac.x - 8f, mac.y + 72f), Size(124f, 10f), 5f, Color(0xFF3A3360))
+        val fly = ((t - 0.6f) / 0.35f).coerceIn(0f, 1f)
         if (fly > 0f) {
-            val p = Offset(page.x + 65f + (mac.x + 40f - page.x - 65f) * fly, page.y + 85f - 40f * kotlin.math.sin(fly * Math.PI.toFloat()))
-            roundRect(Offset(p.x - 18f, p.y - 24f), Size(36f, 48f), 5f, Color(0xFFF4F1FA).copy(alpha = 1f - fly * 0.3f))
+            val from = Offset(page.x + ps.width / 2, page.y + ps.height / 2)
+            val to = Offset(mac.x + 54f, mac.y + 36f)
+            val p = Offset(from.x + (to.x - from.x) * fly, from.y + (to.y - from.y) * fly - 40f * kotlin.math.sin(fly * Math.PI.toFloat()))
+            val k = 1f - 0.4f * fly
+            roundRect(Offset(p.x - 18f * k, p.y - 24f * k), Size(36f * k, 48f * k), 4f, Color(0xFFF4F1FA))
         }
     }
 }
 
 @Composable
 private fun PadArt(t: Float) {
-    Canvas(Modifier.size(260.dp, 180.dp)) {
-        roundRect(Offset(10f, 10f), Size(size.width - 20f, size.height - 20f), 28f, Color(0xFFF4F1FA))
-        drawLine(Color(0x33000000), Offset(40f, size.height - 50f), Offset(size.width - 40f, size.height - 50f), 3f)
-        // A signature written out over the loop.
+    Art(260, 170) { s ->
+        roundRect(Offset(8f, 8f), Size(s.width - 16f, s.height - 16f), 22f, Color(0xFFF4F1FA))
+        drawLine(Color(0x33000000), Offset(32f, s.height - 40f), Offset(s.width - 32f, s.height - 40f), 2f)
+        // A signature written out over the loop (drawn at 0.62 scale to sit on the line).
         val path = Path().apply {
             moveTo(50f, 110f)
             cubicTo(70f, 40f, 95f, 40f, 90f, 110f)
@@ -210,7 +229,11 @@ private fun PadArt(t: Float) {
         val measure = PathMeasure().apply { setPath(path, false) }
         val part = Path()
         measure.getSegment(0f, measure.length * (t / 0.8f).coerceAtMost(1f), part, true)
-        drawPath(part, Color(0xFF1B1530), style = Stroke(7f, cap = StrokeCap.Round))
+        translate(4f, 14f) {
+            scale(0.62f, 0.62f, pivot = Offset.Zero) {
+                drawPath(part, Color(0xFF1B1530), style = Stroke(6f, cap = StrokeCap.Round))
+            }
+        }
     }
 }
 
@@ -236,17 +259,21 @@ private fun TypingArt(t: Float) {
 @Composable
 private fun AwayArt(t: Float) {
     val slide = (t / 0.3f).coerceIn(0f, 1f)
-    Canvas(Modifier.size(260.dp, 200.dp)) {
-        roundRect(Offset(10f, 20f), Size(size.width - 20f, 150f), 14f, Color(0xFF2A2547))
-        roundRect(Offset(-10f + 20f, 170f), Size(size.width - 20f, 14f), 7f, Color(0xFF3A3360))
-        // The summary card slides into the screen's corner.
-        val card = Offset(size.width - 20f - 170f * slide, 34f)
-        roundRect(card, Size(160f, 120f), 16f, Color(0xFF3C3489))
-        drawCircle(Color(0xFFF26BFF), 10f, Offset(card.x + 22f, card.y + 22f))
-        roundRect(Offset(card.x + 40f, card.y + 15f), Size(90f, 12f), 6f, Ink)
-        for (l in 0 until 3) {
-            val shownLine = ((t - 0.35f - l * 0.12f) / 0.12f).coerceIn(0f, 1f)
-            roundRect(Offset(card.x + 16f, card.y + 46f + l * 22f), Size(128f * shownLine * (1f - l * 0.15f), 9f), 4f, Ink.copy(alpha = 0.7f))
+    Art(260, 190) { s ->
+        // A Mac screen; the summary card slides into its top-right corner and fills in.
+        val screen = Offset(14f, 14f)
+        val ss = Size(s.width - 28f, 140f)
+        roundRect(screen, ss, 12f, Color(0xFF2A2547))
+        roundRect(Offset(4f, screen.y + ss.height), Size(s.width - 8f, 12f), 6f, Color(0xFF3A3360))
+        clipRect(screen.x, screen.y, screen.x + ss.width, screen.y + ss.height) {
+            val card = Offset(screen.x + ss.width - 140f * slide, screen.y + 12f)
+            roundRect(card, Size(128f, 100f), 12f, Color(0xFF3C3489))
+            drawCircle(Color(0xFFF26BFF), 8f, Offset(card.x + 18f, card.y + 18f))
+            roundRect(Offset(card.x + 32f, card.y + 13f), Size(76f, 10f), 5f, Ink)
+            for (l in 0 until 3) {
+                val shown = ((t - 0.35f - l * 0.12f) / 0.12f).coerceIn(0f, 1f)
+                roundRect(Offset(card.x + 12f, card.y + 40f + l * 18f), Size(104f * shown * (1f - l * 0.15f), 8f), 4f, Ink.copy(alpha = 0.7f))
+            }
         }
     }
 }
