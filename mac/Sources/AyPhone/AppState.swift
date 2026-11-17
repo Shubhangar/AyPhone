@@ -6,6 +6,7 @@ import os
 private let callLog = Logger(subsystem: "com.ayphone.mac", category: "bluetooth")
 private let linkLog = Logger(subsystem: "com.ayphone.mac", category: "link")
 import Foundation
+import Network
 import SwiftUI
 
 struct PhoneNotification: Identifiable, Equatable {
@@ -210,6 +211,9 @@ final class AppState: ObservableObject {
     private let callPanelController = CallPanelController()
     private var lastFrameAt = Date()
     private var watchdog: Timer?
+    /// Watches this Mac's network, to drop a Wi-Fi link the moment the Mac leaves that network.
+    private let pathMonitor = NWPathMonitor()
+    private var lastAddresses = Set(NetworkInfo.localIPv4Addresses())
     /// ⌃⌥V anywhere: Paste from phone.
     private var pasteHotKey: HotKey?
     private let pasteInterceptor = PasteInterceptor()
@@ -433,6 +437,26 @@ final class AppState: ObservableObject {
                 self.server.send(Msg("macSleep")) { [weak self] in self?.server.disconnect() }
             }
         }
+
+        // The Mac changed networks (or lost one): a Wi-Fi link through the old address is dead,
+        // but nothing closes it, so the phone would show connected until the silence ran out.
+        // Drop it now and announce on the new network. (USB and Bluetooth don't depend on it.)
+        pathMonitor.pathUpdateHandler = { [weak self] _ in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    let now = Set(NetworkInfo.localIPv4Addresses())
+                    let lost = !self.lastAddresses.isSubset(of: now)
+                    self.lastAddresses = now
+                    guard lost, self.connected, !self.server.isBluetooth, !self.server.peerIsLocal else { return }
+                    linkLog.notice("Mac changed networks; dropping the Wi-Fi link")
+                    self.server.disconnect()
+                    self.server.reannounce()
+                    self.beacon.sendNow()
+                }
+            }
+        }
+        pathMonitor.start(queue: .global(qos: .utility))
 
         // The phone pings every 15s, but Android pauses it in deep sleep (screen off, idle) and
         // the pings stop while the link itself is fine. So when it goes quiet, ping it: incoming

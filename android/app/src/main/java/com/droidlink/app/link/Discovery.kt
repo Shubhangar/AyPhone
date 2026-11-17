@@ -93,6 +93,10 @@ class Discovery(private val ctx: Context) {
                     // "AYPHONE1 <port> <mac name>"
                     if (!text.startsWith("AYPHONE1 ")) continue
                     val host = (packet.address as? Inet4Address)?.hostAddress ?: continue
+                    // Only the Mac we paired with: on a shared network other people's Macs run
+                    // AyPhone too, and following them would keep this phone from its own Mac.
+                    val name = text.split(' ', limit = 3).getOrNull(2)?.trim().orEmpty()
+                    if (!isPairedMac(name)) continue
                     // Every one counts: the Mac only announces itself while awake and without
                     // the phone, and the phone waits for this instead of polling a sleeping Mac.
                     Link.discoveredHost = host
@@ -104,11 +108,16 @@ class Discovery(private val ctx: Context) {
         }
     }
 
+    /** Bonjour may add " (2)" to a name another device already uses, so a prefix match. */
+    private fun isPairedMac(name: String): Boolean {
+        val paired = Pairing.load(ctx)?.macName ?: return false
+        return name.isNotEmpty() && (name == paired || name.startsWith(paired))
+    }
+
     @Suppress("DEPRECATION")
     private fun resolve(info: NsdServiceInfo) {
         // Only follow the Mac we paired with; another Mac on the network has a different key.
-        val pairedName = Pairing.load(ctx)?.macName ?: return
-        if (!info.serviceName.startsWith(pairedName)) return
+        if (!isPairedMac(info.serviceName)) return
         nsd.resolveService(info, object : NsdManager.ResolveListener {
             override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {}
             override fun onServiceResolved(serviceInfo: NsdServiceInfo) {

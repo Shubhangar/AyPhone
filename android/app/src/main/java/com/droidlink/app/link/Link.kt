@@ -129,6 +129,11 @@ object Link {
     private var misses = 0
     /** When the Mac's beacon was last heard: Wi-Fi reaches it on this network. */
     @Volatile private var lastBeaconAt = 0L
+    /** When the Mac last sent anything on this link (uptime; see the heartbeat in [session]). */
+    @Volatile private var lastFrameAt = 0L
+    /** The last link stopped answering mid-session: the Mac was awake a moment ago, so if it
+     *  isn't on this Wi-Fi it most likely changed networks or left it, and Bluetooth comes first. */
+    @Volatile private var linkWentSilent = false
     /** After the Mac turns the phone away as it goes to sleep, ignore signs it's back for a
      *  moment (Bonjour still answers for it while it falls asleep), all but its beacon. */
     @Volatile private var quietUntil = 0L
@@ -276,8 +281,13 @@ object Link {
                 if (currentCoroutineContext().isActive) state.value = State.Connecting
                 if (authenticated) backoff = 1_000L
                 if (host == USB_HOST && !authenticated) skipUsbOnce = true
-                // Another computer with this port open. (Not a Mac that's asleep and didn't answer.)
-                if (host != USB_HOST && host != BLUETOOTH && wrongKey) rejected[host] = SystemClock.elapsedRealtime()
+                // Another computer with this port open, such as someone else's Mac running AyPhone
+                // on a shared network: it hangs up on our key. Skip it for a while so the phone gets
+                // on to its own Mac (or Bluetooth). Our Mac's own addresses are spared: asleep, it
+                // can accept a connection and drop it without answering.
+                if (host != USB_HOST && host != BLUETOOTH && !authenticated &&
+                    (wrongKey || host !in pairing.hosts)
+                ) rejected[host] = SystemClock.elapsedRealtime()
                 if (host == BLUETOOTH) {
                     // While the Mac is still connecting its hands-free (calls) link to this phone,
                     // macOS hands our new channel to that instead and it drops. That passes in a few
@@ -344,6 +354,14 @@ object Link {
             }
         }
         Log.i(TAG, "no answer from ${candidates.joinToString()}")
+        // The Wi-Fi link just went silent and the Mac isn't at its addresses: skip the network
+        // search and the usual Bluetooth wait, and go straight to Bluetooth.
+        if (linkWentSilent) {
+            linkWentSilent = false
+            nextBluetoothTry = now + 60_000
+            lastBluetoothTry = now
+            openBluetooth(p).also { lastBluetoothTry = SystemClock.elapsedRealtime() }?.let { return it }
+        }
         if (now - lastScan > 30_000) {
             lastScan = now
             for (host in scanSubnet(p.port)) {
@@ -411,10 +429,11 @@ object Link {
 
     /** While on Bluetooth: is the Mac reachable over USB or Wi-Fi again? */
     private fun fasterLinkAvailable(p: PairingInfo): Boolean {
+        val subnet = ownSubnet()
         val candidates = buildList {
             add(USB_HOST)
             discoveredHost?.let(::add)
-            addAll(p.hosts)
+            addAll(p.hosts.filter { subnet == null || it.startsWith(subnet) })
         }.distinct().filter { it !in rejected }
         return candidates.any { host ->
             try {
@@ -498,16 +517,30 @@ object Link {
                 .put("model", "${Build.MANUFACTURER} ${Build.MODEL}")
                 .put("id", Pairing.deviceId(context))
         )
+        // The Mac answers every ping. No answer means the link is dead even if the socket looks
+        // open (the Mac changed networks or went out of range, so nothing closes it): drop it now
+        // instead of waiting out the read timeout, and find the Mac again. (Uptime, which stops
+        // in deep sleep, so a dozing phone doesn't count its own pause as silence.)
+        lastFrameAt = SystemClock.uptimeMillis()
         val heartbeat = scope.launch {
+            val patience = if (link.label == "Bluetooth") 15_000L else 10_000L
             while (isActive) {
-                delay(15_000)
+                delay(10_000)
+                val sentAt = SystemClock.uptimeMillis()
                 send(msg("ping"))
+                delay(patience)
+                if (lastFrameAt < sentAt) {
+                    Log.i(TAG, "no answer to ping in ${patience / 1000}s; link is dead")
+                    linkWentSilent = link.label != "Bluetooth"
+                    try { link.closer.close() } catch (_: IOException) {}
+                    break
+                }
             }
         }
         // Bluetooth is the fallback: go back to USB or Wi-Fi as soon as either works again.
         val upgrade = if (link.label == "Bluetooth") scope.launch {
             while (isActive) {
-                delay(45_000)
+                delay(10_000)
                 if (fasterLinkAvailable(p)) {
                     Log.i(TAG, "USB or Wi-Fi reachable again; leaving Bluetooth")
                     closeSocket()
@@ -517,8 +550,11 @@ object Link {
         } else null
         try {
             while (true) {
-                val json = JSONObject(String(c.open(readFrame(input)), Charsets.UTF_8))
+                val frame = readFrame(input)
+                lastFrameAt = SystemClock.uptimeMillis()
+                val json = JSONObject(String(c.open(frame), Charsets.UTF_8))
                 if (json.optString("type") == "helloOk") {
+                    linkWentSilent = false
                     macAsleep = false
                     toldAsleep = false
                     misses = 0
