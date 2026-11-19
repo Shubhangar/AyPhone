@@ -6,12 +6,12 @@ You need both apps:
 
 | File | For |
 |---|---|
-| `AyPhone-0.1.20-mac.dmg` | Mac, macOS 14 Sonoma or later (Apple silicon or Intel) |
-| `AyPhone-0.1.20-android.apk` | Android 10 or later |
+| `AyPhone-0.1.21-mac.dmg` | Mac, macOS 14 Sonoma or later (Apple silicon or Intel) |
+| `AyPhone-0.1.21-android.apk` | Android 10 or later |
 
 ## 1. Mac
 
-1. Open `AyPhone-0.1.20-mac.dmg` and drag **AyPhone** onto **Applications**.
+1. Open `AyPhone-0.1.21-mac.dmg` and drag **AyPhone** onto **Applications**.
 2. Open AyPhone from Applications. The first time, macOS says it can't verify the developer, because AyPhone isn't notarized by Apple yet:
    - Click **Done** (or **OK**).
    - Open **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to AyPhone. Confirm with your password or Touch ID.
@@ -26,7 +26,7 @@ AyPhone lives in the menu bar and keeps running when you close its window.
 1. Get the APK onto your phone: Quick Share, Google Drive, email, or a USB cable.
 2. Tap it to install. Android asks you to allow installs from the app you opened it with (Files, Chrome, Drive…). Allow it, then go back and tap **Install**.
    - If Play Protect warns that the app is unknown, tap **More details → Install anyway**.
-   - If it says **App blocked to protect your device** with no way to continue: in some countries (India among them) Android blocks apps from a browser, chat app or file manager that read texts and notifications, as AyPhone must. Either install it from a computer with `adb install AyPhone-0.1.20-android.apk` (installs from a computer aren't blocked), or briefly turn off **Play Store → profile → Play Protect → ⚙ → Scan apps with Play Protect**, install, and turn it back on.
+   - If it says **App blocked to protect your device** with no way to continue: in some countries (India among them) Android blocks apps from a browser, chat app or file manager that read texts and notifications, as AyPhone must. Either install it from a computer with `adb install AyPhone-0.1.21-android.apk` (installs from a computer aren't blocked), or briefly turn off **Play Store → profile → Play Protect → ⚙ → Scan apps with Play Protect**, install, and turn it back on.
    - Then, if Android greys out notification access: **App info → ⋮ → Allow restricted settings**.
 3. Open **AyPhone** and tap **Pair with Mac**, then scan the QR code shown on the Mac's **Pairing** page. Both devices need to be on the same Wi-Fi.
 4. Work through the **Setup** list in the app: notification access, messages/contacts/calls, display over other apps, call controls from Mac, and unrestricted battery. **Call controls from Mac** needs the phone paired with the Mac in Bluetooth settings; Android then asks to let AyPhone manage your Mac (it may call it a watch, the only companion type Android lets apps use). It lets the Mac switch a call to the phone's speaker, mute it and hang up, for phone and WhatsApp-style calls. On Samsung phones also check **Settings → Battery → Background usage limits** and make sure AyPhone isn't put to sleep.
@@ -80,11 +80,11 @@ Some versions of macOS don't let apps take phone-call audio. On those Macs, AyPh
 
 ## Checking the downloads
 
-SHA-256 checksums for version 0.1.20:
+SHA-256 checksums for version 0.1.21:
 
 ```
-ec0ad1432ab39efa319f375a85c4184fe8db82c7dc12a9052b5ed8ac06dd2610  AyPhone-0.1.20-mac.dmg
-7c3874c44ca5eae3931c57426076d575f899d5c5df7d3f0622e84ec394d7ae8b  AyPhone-0.1.20-android.apk
+64d96e6e9650f474c3e12ea0f21fa134d2a0eede2fee73187a5bfa9999146161  AyPhone-0.1.21-mac.dmg
+5b7b76576b2080aa2a4bf22d89480a7fdb82682d73b571a868e9907e9c26e2ff  AyPhone-0.1.21-android.apk
 ```
 
 On a Mac: `shasum -a 256 <file>`.
