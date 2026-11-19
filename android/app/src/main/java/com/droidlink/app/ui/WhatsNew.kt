@@ -64,15 +64,52 @@ import kotlinx.coroutines.launch
  */
 object WhatsNew {
     private const val KEY = "whatsNewSeen"
+    /** The version whose new features the tour shows. Raise it when the pages change. */
+    private const val TOUR_VERSION = "0.1.17"
 
-    /** Shown when this version's tour hasn't been seen and AyPhone was updated, not freshly installed. */
-    fun due(ctx: Context): Boolean {
-        val prefs = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
-        val version = Updates.currentVersion(ctx)
-        if (prefs.getString(KEY, null) == version) return false
+    /**
+     * Fixes and smaller improvements, newest first: after an update, the entries newer than the
+     * version last shown appear on one page (after the tour, when there's a tour). Add one per
+     * release, in plain words.
+     */
+    private val NOTES = linkedMapOf(
+        "0.1.21" to listOf(
+            "New versions download by themselves on Wi-Fi: tap Install now when it says Update ready",
+            "Updating keeps your pairing and permissions, and no longer shows setup again",
+            "After an update you only see what's new in it",
+            "Explains Google Play Protect's warning when you update, and what to tap",
+        ),
+        "0.1.20" to listOf(
+            "Connects only to your own Mac, even when others use AyPhone on the same Wi-Fi",
+            "Moves to Bluetooth in about half a minute when Wi-Fi can't reach your Mac, and back to Wi-Fi within seconds",
+        ),
+        "0.1.19" to listOf("The What's new cards are readable again"),
+    )
+
+    private fun seen(ctx: Context) = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE).getString(KEY, null)
+
+    private fun updated(ctx: Context): Boolean {
         val info = ctx.packageManager.getPackageInfo(ctx.packageName, 0)
         return info.firstInstallTime != info.lastUpdateTime
     }
+
+    /** The feature tour: newer than the last one seen, and part of this version. */
+    fun tourDue(ctx: Context): Boolean {
+        val seen = seen(ctx)
+        return (seen == null || Updates.isNewer(TOUR_VERSION, seen)) && !Updates.isNewer(TOUR_VERSION, Updates.currentVersion(ctx))
+    }
+
+    /** Fixes since the version last shown (just this version's, for installs from before this existed). */
+    fun notesDue(ctx: Context): List<String> {
+        val current = Updates.currentVersion(ctx)
+        val seen = seen(ctx) ?: return NOTES[current].orEmpty()
+        return NOTES.filterKeys { Updates.isNewer(it, seen) && !Updates.isNewer(it, current) }.values.flatten()
+    }
+
+    fun currentNotes(ctx: Context): List<String> = NOTES[Updates.currentVersion(ctx)].orEmpty()
+
+    /** After an update (not a fresh install), when there's a tour or fixes the person hasn't seen. */
+    fun due(ctx: Context): Boolean = updated(ctx) && (tourDue(ctx) || notesDue(ctx).isNotEmpty())
 
     fun markSeen(ctx: Context) =
         ctx.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putString(KEY, Updates.currentVersion(ctx)).apply()
@@ -81,8 +118,16 @@ object WhatsNew {
 private class TourPage(val title: String, val body: String, val art: @Composable (Float) -> Unit)
 
 @Composable
-internal fun WhatsNewTour(done: () -> Unit) {
-    val pages = whatsNewPages()
+internal fun WhatsNewTour(tour: Boolean, notes: List<String>, done: () -> Unit) {
+    val features = whatsNewPages()
+    val pages = androidx.compose.runtime.remember(tour, notes) {
+        (if (tour) features else emptyList()) +
+            (if (notes.isEmpty()) emptyList() else listOf(TourPage("Fixes and improvements", notes.joinToString("\n") { "• $it" }) { NotesArt(it) }))
+    }
+    if (pages.isEmpty()) {
+        androidx.compose.runtime.LaunchedEffect(Unit) { done() }
+        return
+    }
     val pager = rememberPagerState { pages.size }
     val scope = rememberCoroutineScope()
     val clock = rememberInfiniteTransition(label = "art")
@@ -103,7 +148,12 @@ internal fun WhatsNewTour(done: () -> Unit) {
                 Spacer(Modifier.height(28.dp))
                 Text(page.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Color.White, textAlign = TextAlign.Center)
                 Spacer(Modifier.height(10.dp))
-                Text(page.body, style = MaterialTheme.typography.bodyLarge, color = Secondary, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 8.dp))
+                val bullets = page.body.startsWith("• ")
+                Text(
+                    page.body, style = MaterialTheme.typography.bodyLarge, color = Secondary,
+                    textAlign = if (bullets) TextAlign.Start else TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 8.dp).then(if (bullets) Modifier.fillMaxWidth() else Modifier)
+                )
             }
         }
         Row(Modifier.fillMaxWidth().padding(vertical = 16.dp), horizontalArrangement = Arrangement.Center) {
@@ -115,7 +165,7 @@ internal fun WhatsNewTour(done: () -> Unit) {
             }
         }
         val last = pager.currentPage == pages.lastIndex
-        PrimaryButton(if (last) "Get started" else "Next", if (last) Icons.Filled.Check else Icons.AutoMirrored.Filled.ArrowForward, Modifier.fillMaxWidth()) {
+        PrimaryButton(if (!last) "Next" else if (tour) "Get started" else "Done", if (last) Icons.Filled.Check else Icons.AutoMirrored.Filled.ArrowForward, Modifier.fillMaxWidth()) {
             if (last) done() else scope.launch { pager.animateScrollToPage(pager.currentPage + 1) }
         }
     }
@@ -274,6 +324,23 @@ private fun AwayArt(t: Float) {
                 val shown = ((t - 0.35f - l * 0.12f) / 0.12f).coerceIn(0f, 1f)
                 roundRect(Offset(card.x + 12f, card.y + 40f + l * 18f), Size(104f * shown * (1f - l * 0.15f), 8f), 4f, Ink.copy(alpha = 0.7f))
             }
+        }
+    }
+}
+
+@Composable
+private fun NotesArt(t: Float) {
+    Art(240, 180) { s ->
+        // A short list, ticked off one line at a time.
+        for (i in 0 until 3) {
+            val y = 30f + i * 48f
+            val on = t > 0.15f + i * 0.22f
+            drawCircle(if (on) Indigo else Faint, 14f, Offset(40f, y + 10f))
+            if (on) {
+                drawLine(Ink, Offset(33f, y + 10f), Offset(38f, y + 16f), 3.5f, StrokeCap.Round)
+                drawLine(Ink, Offset(38f, y + 16f), Offset(48f, y + 4f), 3.5f, StrokeCap.Round)
+            }
+            roundRect(Offset(66f, y + 4f), Size((s.width - 96f) * (1f - i * 0.18f), 12f), 6f, if (on) Ink.copy(alpha = 0.8f) else Faint)
         }
     }
 }

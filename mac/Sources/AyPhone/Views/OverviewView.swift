@@ -197,6 +197,10 @@ struct OverviewView: View {
                 Toggle(isOn: $state.showCallsOnMac) {
                     Label("Show calls on this Mac", systemImage: "phone")
                 }
+                Divider().opacity(0.5)
+                Toggle(isOn: $state.autoUpdate) {
+                    Label("Download updates automatically", systemImage: "arrow.down.circle")
+                }
             }
             .toggleStyle(.row)
         }
@@ -251,7 +255,7 @@ struct NotificationPermissionCard: View {
                         state.requestNotificationPermission()
                     }
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(.pill)
             }
         }
     }

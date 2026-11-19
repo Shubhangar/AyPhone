@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -19,10 +20,12 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * Updates from GitHub: checks the latest release now and then, and on the user's tap downloads
- * its APK, makes sure it's signed with the same key as this copy (so only our own builds get
- * installed), and hands it to Android's installer. Android asks to confirm, except on 12+ once
- * AyPhone installed the copy it's replacing.
+ * Updates from GitHub: checks the latest release now and then and (with "Download updates
+ * automatically" on, and on Wi-Fi) downloads its APK in the background, then says it's ready.
+ * Install now makes sure it's signed with the same key as this copy (so only our own builds get
+ * installed) and hands it to Android's installer. Android asks to confirm, except on 12+ once
+ * AyPhone installed the copy it's replacing. It never installs without a tap: Android or Play
+ * Protect may want an answer, so the person is there for it.
  */
 object Updates {
     private const val LATEST = "https://api.github.com/repos/Shubhangar/AyPhone/releases/latest"
@@ -39,6 +42,16 @@ object Updates {
 
     /** A newer release than this copy, once found. */
     val available = MutableStateFlow<Release?>(null)
+    /** The version whose APK is downloaded and waiting for Install now. */
+    val ready = MutableStateFlow<String?>(null)
+
+    private fun prefs(ctx: Context) = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
+
+    /** "Download updates automatically" (on unless switched off). */
+    fun autoDownload(ctx: Context) = prefs(ctx).getBoolean("autoUpdate", true)
+    fun setAutoDownload(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("autoUpdate", on).apply()
+
+    private fun apkFile(ctx: Context, version: String) = File(File(ctx.cacheDir, "updates"), "AyPhone-$version.apk")
     val phase = MutableStateFlow<Phase>(Phase.Idle)
     private var lastCheck = 0L
 
@@ -62,16 +75,35 @@ object Updates {
             val apk = (0 until assets.length()).map { assets.getJSONObject(it).getString("browser_download_url") }
                 .firstOrNull { it.endsWith("-android.apk") } ?: return@withContext
             val newer = isNewer(version, currentVersion(ctx))
-            available.value = if (newer) Release(version, apk) else null
-            // Once per version: a notification with an Update button.
-            val prefs = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
-            if (newer && prefs.getString("notifiedUpdate", null) != version) {
-                prefs.edit().putString("notifiedUpdate", version).apply()
-                com.droidlink.app.Notifications.updateAvailable(ctx, version)
+            val release = if (newer) Release(version, apk) else null
+            available.value = release
+            if (release == null) {
+                ready.value = null
+                File(ctx.cacheDir, "updates").listFiles()?.forEach { it.delete() }
+                return@withContext
             }
+            if (apkFile(ctx, version).length() > 0) ready.value = version
+            // Downloaded in the background first where it can be (Wi-Fi), so Install now is quick.
+            if (autoDownload(ctx) && ready.value != version && !ctx.getSystemService(ConnectivityManager::class.java).isActiveNetworkMetered) {
+                try {
+                    download(ctx, release)
+                    ready.value = version
+                    Log.i(TAG, "update $version downloaded; ready to install")
+                } catch (e: Exception) {
+                    Log.i(TAG, "background download failed: $e")
+                }
+            }
+            notifyOnce(ctx, version)
         } catch (e: Exception) {
             Log.i(TAG, "update check failed: $e")
         }
+    }
+
+    /** Once per version: "available" (Update), or "ready to install" (Install now). */
+    private fun notifyOnce(ctx: Context, version: String) {
+        if (prefs(ctx).getString("notifiedUpdate", null) == version) return
+        prefs(ctx).edit().putString("notifiedUpdate", version).apply()
+        com.droidlink.app.Notifications.updateAvailable(ctx, version, ready = ready.value == version)
     }
 
     /** "0.1.10" is newer than "0.1.9". */
@@ -101,7 +133,8 @@ object Updates {
         if (phase.value == Phase.Downloading || phase.value == Phase.Installing) return
         phase.value = Phase.Downloading
         try {
-            val apk = withContext(Dispatchers.IO) { download(ctx, release) }
+            val waiting = apkFile(ctx, release.version).takeIf { ready.value == release.version && it.length() > 0 }
+            val apk = waiting ?: withContext(Dispatchers.IO) { download(ctx, release) }
             if (!signedLikeUs(ctx, apk)) {
                 apk.delete()
                 phase.value = Phase.Failed("This copy can't update itself (it's a development build). Download AyPhone from GitHub instead.")
@@ -118,13 +151,16 @@ object Updates {
     private fun download(ctx: Context, release: Release): File {
         val dir = File(ctx.cacheDir, "updates").apply { mkdirs() }
         dir.listFiles()?.forEach { it.delete() }
-        val file = File(dir, "AyPhone-${release.version}.apk")
+        val file = apkFile(ctx, release.version)
+        val part = File(dir, file.name + ".part")
         val conn = (URL(release.apk).openConnection() as HttpURLConnection).apply {
             instanceFollowRedirects = true
             connectTimeout = 15_000
             readTimeout = 60_000
         }
-        conn.inputStream.use { input -> file.outputStream().use { input.copyTo(it) } }
+        conn.inputStream.use { input -> part.outputStream().use { input.copyTo(it) } }
+        // Whole files only: an interrupted download never counts as ready.
+        if (!part.renameTo(file)) throw java.io.IOException("couldn't save the update")
         return file
     }
 
@@ -171,9 +207,18 @@ object Updates {
                 }
                 PackageInstaller.STATUS_SUCCESS -> phase.value = Phase.Idle
                 else -> {
+                    val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
                     val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
-                    Log.w(TAG, "update install failed: $message")
-                    phase.value = Phase.Failed("Android didn't install the update.")
+                    Log.w(TAG, "update install failed: $status $message")
+                    phase.value = Phase.Failed(
+                        when {
+                            // Play Protect said no (its warning was closed, or Don't install).
+                            message?.contains("VERIFICATION", ignoreCase = true) == true || status == PackageInstaller.STATUS_FAILURE_BLOCKED ->
+                                "Google Play Protect stopped the update. Tap Install now again; when it warns, tap More details, then Install anyway."
+                            status == PackageInstaller.STATUS_FAILURE_ABORTED -> "The update was cancelled. Tap Install now to try again."
+                            else -> "Android didn't install the update. Tap Install now to try again."
+                        }
+                    )
                 }
             }
         }

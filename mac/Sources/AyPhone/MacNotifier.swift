@@ -32,6 +32,8 @@ final class MacNotifier: NSObject, UNUserNotificationCenterDelegate {
         let reveal = UNNotificationAction(identifier: "reveal", title: "Show in Finder", options: [])
         let update = UNNotificationAction(identifier: "update", title: "Update", options: [])
         categories["update"] = UNNotificationCategory(identifier: "update", actions: [update], intentIdentifiers: [])
+        let installNow = UNNotificationAction(identifier: "update", title: "Install now", options: [])
+        categories["updateReady"] = UNNotificationCategory(identifier: "updateReady", actions: [installNow], intentIdentifiers: [])
         categories["file"] = UNNotificationCategory(identifier: "file", actions: [reveal], intentIdentifiers: [])
         center.setNotificationCategories(Set(categories.values))
         requestPermission()
@@ -140,11 +142,12 @@ final class MacNotifier: NSObject, UNUserNotificationCenterDelegate {
     }
 
     /// A new version is out; "Update" installs it and reopens AyPhone.
-    func updateAvailable(_ version: String) {
+    func updateAvailable(_ version: String, ready: Bool) {
         let content = UNMutableNotificationContent()
-        content.title = "AyPhone \(version) is ready"
-        content.body = "Update now. It installs and reopens in a few seconds."
-        content.categoryIdentifier = "update"
+        content.title = ready ? "AyPhone \(version) is ready to install" : "AyPhone \(version) is available"
+        content.body = ready ? "It's downloaded. Install now; AyPhone reopens in a few seconds."
+                             : "Update now. It installs and reopens in a few seconds."
+        content.categoryIdentifier = ready ? "updateReady" : "update"
         content.userInfo = ["update": true]
         center?.add(UNNotificationRequest(identifier: "update", content: content, trigger: nil))
     }

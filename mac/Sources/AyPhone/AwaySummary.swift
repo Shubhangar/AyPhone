@@ -242,7 +242,7 @@ private struct AwayCard: View {
                 Text(summary).font(.callout).fixedSize(horizontal: false, vertical: true)
                 HStack {
                     Spacer()
-                    Button("Show all") { showAll() }.buttonStyle(.glass)
+                    Button("Show all") { showAll() }.buttonStyle(.pill)
                 }
             }
         }

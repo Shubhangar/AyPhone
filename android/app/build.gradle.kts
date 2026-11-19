@@ -39,6 +39,12 @@ android {
             isMinifyEnabled = false
             signingConfig = signingConfigs.findByName("release")
         }
+        // Test builds signed with the release key too, so a phone can move between a test build
+        // and a published release as an ordinary update, keeping its pairing and permissions
+        // (Android refuses an update signed with a different key: it has to be reinstalled).
+        debug {
+            signingConfigs.findByName("release")?.let { signingConfig = it }
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

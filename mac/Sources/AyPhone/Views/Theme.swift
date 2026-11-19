@@ -385,7 +385,7 @@ struct BouncingIconButton: View {
 
 /// Figma's bordered button: white text on a faint glass fill (macOS's own bordered style
 /// looks disabled on the dark glass). A destructive one gets magenta text.
-struct GlassButtonStyle: ButtonStyle {
+struct PillButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         GlassButtonBody(configuration: configuration)
     }
@@ -403,7 +403,7 @@ private struct GlassButtonBody: View {
             .padding(.vertical, 4)
             .background(Color.white.opacity(hovering ? 0.15 : 0.09), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             .onHover { inside in withAnimation(.easeOut(duration: 0.15)) { hovering = inside } }
-            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Theme.glassEdge))
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Theme.glassEdge).allowsHitTesting(false))
             .opacity(configuration.isPressed ? 0.75 : 1)
             .scaleEffect(configuration.isPressed ? 0.96 : 1)
             .animation(Theme.snappy, value: configuration.isPressed)
@@ -411,8 +411,10 @@ private struct GlassButtonBody: View {
     }
 }
 
-extension ButtonStyle where Self == GlassButtonStyle {
-    static var glass: GlassButtonStyle { GlassButtonStyle() }
+// Not called "glass": SwiftUI has its own `.glass` button style, and with both around the
+// compiler can pick Apple's, whose buttons don't take clicks inside AyPhone's glass cards.
+extension ButtonStyle where Self == PillButtonStyle {
+    static var pill: PillButtonStyle { PillButtonStyle() }
 }
 
 /// A settings row: icon and title on the left, the switch at the far right.

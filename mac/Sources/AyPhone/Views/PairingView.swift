@@ -81,7 +81,7 @@ struct PairingView: View {
                     .help("Use this if your Mac's IP address changed")
                 Button("Reset pairing…", role: .destructive) { confirmReset = true }
             }
-            .buttonStyle(.glass)
+            .buttonStyle(.pill)
         }
         .padding(24)
         .frame(width: 340)

@@ -33,6 +33,12 @@ AyPhone lives in the menu bar and keeps running when you close its window.
 
 That's it. From now on the phone reconnects automatically whenever both devices are on the same network.
 
+## Updates
+
+Both apps download new versions in the background (the phone only on Wi-Fi) and then show **Update ready**. Tap **Install now**: your pairing and permissions stay.
+
+On the phone, Google Play Protect may warn that AyPhone isn't safe. That's because it doesn't come from the Play Store and reads your texts and notifications. Tap **More details**, then **Install anyway**. If you closed the warning, the update stops; tap **Install now** again. Please don't turn Play Protect off for this.
+
 ## When the Wi-Fi blocks the connection
 
 Some networks (offices, hotels, some home routers) don't let devices on the same Wi-Fi talk to each other. AyPhone first tries other ways to find the Mac on the network. If none work, it falls back to Bluetooth, so notifications, messages, calls and the clipboard keep working:

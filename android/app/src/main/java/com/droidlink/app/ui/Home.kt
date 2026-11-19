@@ -575,24 +575,34 @@ internal fun UpdateCard() {
     val ctx = LocalContext.current
     val release by com.droidlink.app.feature.Updates.available.collectAsStateWithLifecycle()
     val phase by com.droidlink.app.feature.Updates.phase.collectAsStateWithLifecycle()
+    val readyVersion by com.droidlink.app.feature.Updates.ready.collectAsStateWithLifecycle()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val r = release ?: return
     val busy = phase is com.droidlink.app.feature.Updates.Phase.Downloading || phase is com.droidlink.app.feature.Updates.Phase.Installing
     GlassCard(padding = 14) {
-        Text("Update available", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        val isReady = readyVersion == r.version
+        Text(if (isReady) "Update ready" else "Update available", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(2.dp))
         Text(
             when (val p = phase) {
                 com.droidlink.app.feature.Updates.Phase.Downloading -> "Downloading AyPhone ${r.version}…"
                 com.droidlink.app.feature.Updates.Phase.Installing -> "Installing. Tap Update if Android asks."
                 is com.droidlink.app.feature.Updates.Phase.Failed -> p.reason
-                else -> "AyPhone ${r.version} is ready to install."
+                else -> if (isReady) "AyPhone ${r.version} is downloaded. It installs in a few seconds and keeps your pairing."
+                else "AyPhone ${r.version} is out. It downloads and installs in a few seconds."
             },
             style = MaterialTheme.typography.bodySmall, color = Secondary
         )
         if (!busy) {
+            Spacer(Modifier.height(8.dp))
+            // Play Protect often warns about apps from outside the Play Store that read texts and
+            // notifications; say so before it happens, and how to get past it.
+            Text(
+                "Google Play Protect may say AyPhone isn't safe, because it doesn't come from the Play Store and reads your texts and notifications. Tap More details, then Install anyway.",
+                style = MaterialTheme.typography.bodySmall, color = Secondary.copy(alpha = 0.8f)
+            )
             Spacer(Modifier.height(10.dp))
-            PrimaryButton("Update", Icons.Filled.SystemUpdate) {
+            PrimaryButton(if (isReady) "Install now" else "Update", Icons.Filled.SystemUpdate) {
                 if (com.droidlink.app.feature.Updates.allowedToInstall(ctx)) {
                     scope.launch { com.droidlink.app.feature.Updates.install(ctx) }
                 }

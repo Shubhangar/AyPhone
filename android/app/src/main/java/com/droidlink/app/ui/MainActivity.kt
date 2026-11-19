@@ -122,6 +122,7 @@ class MainActivity : ComponentActivity() {
     private var onboarded by mutableStateOf(false)
     /** The "What's new" tour, once after an update (or opened from Settings). */
     private var showWhatsNew by mutableStateOf(false)
+    private var whatsNewFromSettings by mutableStateOf(false)
 
     private val scanner = registerForActivityResult(ScanContract()) { result ->
         result.contents?.let(::onScanned)
@@ -153,9 +154,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        // People who set AyPhone up before onboarding existed go straight to the home screen.
-        onboarded = prefs.getBoolean("onboarded", false) ||
-            (Pairing.load(this) != null && setupSteps().filter { !it.optional }.all { it.done })
+        // Once paired, never onboarding again (an update, a permission turned off later, or
+        // setup left unfinished): Home's "Finish setting up" card lists anything still missing.
+        onboarded = prefs.getBoolean("onboarded", false) || Pairing.load(this) != null
         if (onboarded) prefs.edit().putBoolean("onboarded", true).apply()
         com.droidlink.app.feature.LastReceived.load(this)
         showWhatsNew = onboarded && WhatsNew.due(this)
@@ -304,9 +305,15 @@ class MainActivity : ComponentActivity() {
             label = "onboarding"
         ) { done ->
             if (done == null) {
-                WhatsNewTour {
+                // Opened from Settings: the whole tour and this version's fixes. After an update:
+                // only what hasn't been seen.
+                WhatsNewTour(
+                    tour = whatsNewFromSettings || WhatsNew.tourDue(this@MainActivity),
+                    notes = if (whatsNewFromSettings) WhatsNew.currentNotes(this@MainActivity) else WhatsNew.notesDue(this@MainActivity),
+                ) {
                     WhatsNew.markSeen(this@MainActivity)
                     showWhatsNew = false
+                    whatsNewFromSettings = false
                 }
             } else if (done) {
                 Home(
@@ -317,7 +324,7 @@ class MainActivity : ComponentActivity() {
                         sendFiles = { filePicker.launch(arrayOf("*/*")) },
                         reconnect = { Link.restart() },
                         unpair = ::unpair,
-                        whatsNew = { showWhatsNew = true },
+                        whatsNew = { whatsNewFromSettings = true; showWhatsNew = true },
                     )
                 )
             } else {

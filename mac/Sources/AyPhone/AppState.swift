@@ -124,6 +124,10 @@ final class AppState: ObservableObject {
     @Published private(set) var ringing = false
     @Published private(set) var toast: Toast?
     @Published var notificationPermission: NotificationPermission = .unknown
+    /// Download new versions in the background, so Install now is one click.
+    @Published var autoUpdate = UserDefaults.standard.object(forKey: "autoUpdate") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(autoUpdate, forKey: "autoUpdate") }
+    }
     @Published var showCallsOnMac = UserDefaults.standard.object(forKey: "showCallsOnMac") as? Bool ?? true {
         didSet { UserDefaults.standard.set(showCallsOnMac, forKey: "showCallsOnMac") }
     }
@@ -382,7 +386,8 @@ final class AppState: ObservableObject {
         away.enabled = { [weak self] in self?.awaySummaryEnabled == true }
         away.showAll = { [weak self] in self?.showMainWindow() }
         away.start()
-        updater.onNewRelease = { [weak self] version in self?.notifier.updateAvailable(version) }
+        updater.onNewRelease = { [weak self] version, ready in self?.notifier.updateAvailable(version, ready: ready) }
+        updater.autoDownload = { [weak self] in self?.autoUpdate == true }
         // After the launch animation: what's new, if AyPhone was just updated.
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
             MainActor.assumeIsolated { if let self { WhatsNew.showIfDue(state: self) } }

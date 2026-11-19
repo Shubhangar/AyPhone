@@ -546,6 +546,24 @@ internal fun SettingsTab(paired: Boolean, steps: List<SetupStep>, actions: HomeA
         }) { Text("Check for updates", color = Cyan) }
         TextButton(onClick = actions.whatsNew) { Text("What's new", color = Cyan) }
     }
+    GlassCard(padding = 16) {
+        var auto by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(Updates.autoDownload(ctx)) }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Download updates automatically", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "New versions download in the background on Wi-Fi. You install them with one tap, and your pairing and permissions stay.",
+                    style = MaterialTheme.typography.bodySmall, color = Secondary
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            Switch(
+                checked = auto,
+                onCheckedChange = { on -> auto = on; Updates.setAutoDownload(ctx, on) },
+                colors = SwitchDefaults.colors(checkedTrackColor = Cyan, checkedThumbColor = Color.White, uncheckedTrackColor = Color.White.copy(alpha = 0.12f))
+            )
+        }
+    }
     UpdateCard()
 }
 

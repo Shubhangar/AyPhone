@@ -5,9 +5,10 @@ import os
 
 private let log = Logger(subsystem: "com.ayphone.mac", category: "update")
 
-/// Updates from GitHub: checks the latest release now and then, and on the user's click
-/// downloads its .dmg, makes sure the app inside is signed the same way as this one (so only
-/// our own builds get installed), swaps it in and relaunches.
+/// Updates from GitHub: checks the latest release now and then and (with "Download updates
+/// automatically" on) downloads it in the background, making sure the app inside is signed the
+/// same way as this one, so only our own builds get installed. Then "Update ready": one click
+/// swaps it in and relaunches. It never restarts AyPhone by itself.
 @MainActor
 final class Updater: ObservableObject {
     struct Release: Equatable {
@@ -26,10 +27,18 @@ final class Updater: ObservableObject {
     /// A newer release than this copy, once found.
     @Published private(set) var available: Release?
     @Published private(set) var phase: Phase = .idle
-    /// Tells the user once per version (a notification with an Update button).
-    var onNewRelease: (String) -> Void = { _ in }
+    /// Tells the user once per version (a notification with an Update / Install now button);
+    /// `true` when it's already downloaded.
+    var onNewRelease: (String, Bool) -> Void = { _, _ in }
+    /// "Download updates automatically" is on.
+    var autoDownload: () -> Bool = { false }
+    /// The available release has been downloaded and checked: Install now is instant.
+    @Published private(set) var ready = false
 
     private var timer: Timer?
+    /// The checked copy of the new app, waiting for Install now.
+    private var staged: (version: String, app: URL)?
+    private var preparing = false
 
     static var currentVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
@@ -59,11 +68,39 @@ final class Updater: ObservableObject {
         let release = Release(version: version, notes: json["body"] as? String ?? "", dmg: dmg)
         if available != release { log.notice("update available: \(version, privacy: .public)") }
         available = release
-        let key = "notifiedUpdate"
-        if UserDefaults.standard.string(forKey: key) != version {
-            UserDefaults.standard.set(version, forKey: key)
-            onNewRelease(version)
+        if autoDownload() {
+            await prepare(release)
+        } else {
+            notifyOnce(version, ready: false)
         }
+    }
+
+    /// Downloads and checks the release in the background, then says it's ready.
+    private func prepare(_ release: Release) async {
+        if staged?.version == release.version, FileManager.default.fileExists(atPath: staged!.app.path) {
+            ready = true
+            return
+        }
+        guard !preparing, phase == .idle else { return }
+        preparing = true
+        defer { preparing = false }
+        do {
+            let app = try await download(release)
+            staged = (release.version, app)
+            ready = true
+            log.notice("update \(release.version, privacy: .public) downloaded; ready to install")
+            notifyOnce(release.version, ready: true)
+        } catch {
+            // Not shown: the Update button still downloads it on a click.
+            log.error("background download failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private func notifyOnce(_ version: String, ready: Bool) {
+        let key = "notifiedUpdate"
+        guard UserDefaults.standard.string(forKey: key) != version else { return }
+        UserDefaults.standard.set(version, forKey: key)
+        onNewRelease(version, ready)
     }
 
     /// "0.1.10" is newer than "0.1.9".
@@ -80,6 +117,11 @@ final class Updater: ObservableObject {
     func install() {
         log.notice("update clicked (available: \(self.available?.version ?? "none", privacy: .public), phase: \(String(describing: self.phase), privacy: .public))")
         guard let release = available, phase != .downloading, phase != .installing else { return }
+        if let staged, staged.version == release.version, FileManager.default.fileExists(atPath: staged.app.path) {
+            phase = .installing
+            do { try relaunch(replacingWith: staged.app) } catch { phase = .failed(error.localizedDescription) }
+            return
+        }
         phase = .downloading
         Task {
             do {
@@ -93,7 +135,7 @@ final class Updater: ObservableObject {
         }
     }
 
-    private struct UpdateError: LocalizedError {
+    private struct UpdateError: LocalizedError, Sendable {
         var errorDescription: String?
         init(_ text: String) { errorDescription = text }
     }
@@ -103,6 +145,12 @@ final class Updater: ObservableObject {
         log.notice("downloading \(release.dmg.absoluteString, privacy: .public)")
         let (file, _) = try await URLSession.shared.download(from: release.dmg)
         log.notice("downloaded; checking the signature")
+        // Mounting, copying and checking take a few seconds: off the main thread, so the app
+        // doesn't stall while it downloads in the background.
+        return try await Task.detached(priority: .utility) { try Self.stage(dmg: file) }.value
+    }
+
+    private nonisolated static func stage(dmg file: URL) throws -> URL {
         let work = FileManager.default.temporaryDirectory.appendingPathComponent("AyPhoneUpdate-\(UUID().uuidString)")
         let mount = work.appendingPathComponent("mount")
         try FileManager.default.createDirectory(at: mount, withIntermediateDirectories: true)
@@ -110,13 +158,13 @@ final class Updater: ObservableObject {
         defer { try? run("/usr/bin/hdiutil", ["detach", mount.path, "-quiet", "-force"]) }
         let staged = work.appendingPathComponent("AyPhone.app")
         try run("/usr/bin/ditto", [mount.appendingPathComponent("AyPhone.app").path, staged.path])
-        guard Self.signedLikeUs(staged) else { throw UpdateError("The download isn't signed like this copy of AyPhone, so it wasn't installed.") }
+        guard signedLikeUs(staged) else { throw UpdateError("The download isn't signed like this copy of AyPhone, so it wasn't installed.") }
         return staged
     }
 
     /// Whether the app at `url` meets this app's own code requirement (same identifier, same
     /// signing certificate).
-    static func signedLikeUs(_ url: URL) -> Bool {
+    nonisolated static func signedLikeUs(_ url: URL) -> Bool {
         var me: SecCode?
         var requirement: SecRequirement?
         var other: SecStaticCode?
@@ -144,7 +192,7 @@ final class Updater: ObservableObject {
     }
 
     @discardableResult
-    private func run(_ tool: String, _ arguments: [String]) throws -> Int32 {
+    private nonisolated static func run(_ tool: String, _ arguments: [String]) throws -> Int32 {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: tool)
         p.arguments = arguments

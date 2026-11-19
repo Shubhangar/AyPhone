@@ -7,6 +7,27 @@ import SwiftUI
 enum WhatsNew {
     private static let seenKey = "whatsNewSeen"
     private static let launchedKey = "lastLaunchedVersion"
+    /// The version whose new features the tour shows. Raise it when the pages change.
+    private static let tourVersion = "0.1.17"
+
+    /// Fixes and smaller improvements, newest first: after an update, the entries newer than the
+    /// version last shown appear on one page (after the tour, when there's a tour). Add one per
+    /// release, in plain words.
+    private static let notes: [(version: String, items: [String])] = [
+        ("0.1.21", ["New versions download by themselves: click Install now when it says Update ready",
+                    "Updating keeps your pairing and permissions",
+                    "After an update you only see what's new in it",
+                    "Buttons on the overview cards respond to clicks again",
+                    "No grey bar across the top in full screen"]),
+        ("0.1.20", ["Your phone connects only to this Mac, even when others use AyPhone on the same Wi-Fi",
+                    "Shows the phone as disconnected straight away when this Mac changes networks"]),
+    ]
+
+    private static func notes(after seen: String?, upTo version: String) -> [String] {
+        guard let seen else { return notes.first { $0.version == version }?.items ?? [] }
+        return notes.filter { Updater.isNewer($0.version, than: seen) && !Updater.isNewer($0.version, than: version) }
+            .flatMap(\.items)
+    }
     private static var window: NSWindow?
 
     /// On launch: shows the tour if this version is new to an existing install.
@@ -17,11 +38,19 @@ enum WhatsNew {
         defaults.set(version, forKey: launchedKey)
         // (Installs from before this existed have a pairing key.)
         let updated = previous != nil || defaults.string(forKey: "pairingKey") != nil
-        guard defaults.string(forKey: seenKey) != version, updated, previous != version else { return }
-        show(state: state)
+        let seen = defaults.string(forKey: seenKey)
+        let tourDue = (seen.map { Updater.isNewer(tourVersion, than: $0) } ?? true) && !Updater.isNewer(tourVersion, than: version)
+        let fixes = notes(after: seen, upTo: version)
+        guard updated, previous != version, tourDue || !fixes.isEmpty else { return }
+        show(state: state, tour: tourDue, fixes: fixes)
     }
 
+    /// From the menu: the whole tour and this version's fixes.
     static func show(state: AppState) {
+        show(state: state, tour: true, fixes: notes(after: nil, upTo: Updater.currentVersion))
+    }
+
+    private static func show(state: AppState, tour: Bool, fixes: [String]) {
         UserDefaults.standard.set(Updater.currentVersion, forKey: seenKey)
         if let window {
             window.makeKeyAndOrderFront(nil)
@@ -32,7 +61,7 @@ enum WhatsNew {
         w.titlebarAppearsTransparent = true
         w.titleVisibility = .hidden
         w.isReleasedWhenClosed = false
-        let host = NSHostingView(rootView: WhatsNewView(close: { w.close() }).environmentObject(state))
+        let host = NSHostingView(rootView: WhatsNewView(tour: tour, fixes: fixes, close: { w.close() }).environmentObject(state))
         host.sizingOptions = []
         w.contentView = host
         w.center()
@@ -50,11 +79,20 @@ private struct TourPage {
 
 private struct WhatsNewView: View {
     @EnvironmentObject private var state: AppState
+    let tour: Bool
+    let fixes: [String]
     let close: () -> Void
     @ViewState private var index = 0
     @ViewState private var start = Date()
 
     private var pages: [TourPage] {
+        (tour ? featurePages : []) + (fixes.isEmpty ? [] : [
+            TourPage(title: "Fixes and improvements", body: fixes.map { "• " + $0 }.joined(separator: "\n"),
+                     art: { AnyView(NotesArt(t: $0)) })
+        ])
+    }
+
+    private var featurePages: [TourPage] {
         [
             TourPage(title: "Scan with your phone",
                      body: "In the menu bar: Scan doc, Scan text or Photo. Your phone's camera opens, and the PDF, the text or the photo lands right where you're working.",
@@ -89,8 +127,10 @@ private struct WhatsNewView: View {
             .id(index)
             VStack(spacing: 8) {
                 Text(page.title).font(.title2.weight(.bold))
-                Text(page.body).font(.body).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                let bullets = page.body.hasPrefix("• ")
+                Text(page.body).font(.body).foregroundStyle(.secondary).multilineTextAlignment(bullets ? .leading : .center)
                     .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: bullets ? .infinity : nil, alignment: .leading)
             }
             .padding(.horizontal, 12)
             Spacer(minLength: 0)
@@ -102,13 +142,13 @@ private struct WhatsNewView: View {
             HStack {
                 if index < pages.count - 1 { Button("Skip") { close() }.buttonStyle(.plain).foregroundStyle(.secondary) }
                 Spacer()
-                if index == 3 && AwaySummary.isAvailable && !state.awaySummaryEnabled {
-                    Button("Turn on") { state.awaySummaryEnabled = true }.buttonStyle(.glass)
+                if tour && index == 3 && AwaySummary.isAvailable && !state.awaySummaryEnabled {
+                    Button("Turn on") { state.awaySummaryEnabled = true }.buttonStyle(.pill)
                 }
                 Button {
                     if index == pages.count - 1 { close() } else { withAnimation(Theme.spring) { index += 1 }; start = Date() }
                 } label: {
-                    Text(index == pages.count - 1 ? "Get started" : "Next").font(.body.weight(.semibold)).foregroundStyle(.white)
+                    Text(index < pages.count - 1 ? "Next" : tour ? "Get started" : "Done").font(.body.weight(.semibold)).foregroundStyle(.white)
                         .padding(.horizontal, 20).padding(.vertical, 8)
                         .background { Capsule().fill(Theme.indigo) }
                         .contentShape(Capsule())
@@ -207,6 +247,26 @@ private struct UpdateArt: View {
             Circle().trim(from: 0, to: min(1, t / 0.7)).stroke(Theme.indigo, style: StrokeStyle(lineWidth: 8, lineCap: .round))
                 .rotationEffect(.degrees(-90)).frame(width: 110, height: 110)
             Image(systemName: t > 0.7 ? "checkmark" : "arrow.down").font(.system(size: 40, weight: .semibold)).foregroundStyle(.white)
+        }
+    }
+}
+
+/// A short list, ticked off one line at a time.
+private struct NotesArt: View {
+    let t: Double
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            ForEach(0..<3, id: \.self) { i in
+                let on = t > 0.15 + Double(i) * 0.22
+                HStack(spacing: 14) {
+                    ZStack {
+                        Circle().fill(on ? Theme.indigo : .white.opacity(0.12)).frame(width: 30, height: 30)
+                        if on { Image(systemName: "checkmark").font(.system(size: 14, weight: .bold)).foregroundStyle(.white) }
+                    }
+                    Capsule().fill(.white.opacity(on ? 0.8 : 0.12)).frame(width: 200 - Double(i) * 36, height: 12)
+                }
+            }
         }
     }
 }

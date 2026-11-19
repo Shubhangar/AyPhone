@@ -36,7 +36,7 @@ object Notifications {
     }
 
     /** A new version is out: tapping opens AyPhone; Update opens it and starts installing. */
-    fun updateAvailable(ctx: Context, version: String) {
+    fun updateAvailable(ctx: Context, version: String, ready: Boolean = false) {
         val open = PendingIntent.getActivity(ctx, 10, Intent(ctx, com.droidlink.app.ui.MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val update = PendingIntent.getActivity(
             ctx, 11,
@@ -45,10 +45,10 @@ object Notifications {
         )
         val n = Notification.Builder(ctx, UPDATES)
             .setSmallIcon(R.drawable.ic_stat_ayphone)
-            .setContentTitle("AyPhone $version is ready")
-            .setContentText("Update to get the latest fixes and features.")
+            .setContentTitle(if (ready) "AyPhone $version is ready to install" else "AyPhone $version is available")
+            .setContentText(if (ready) "It's downloaded. Tap Install now; it takes a few seconds." else "Update to get the latest fixes and features.")
             .setContentIntent(open)
-            .addAction(Notification.Action.Builder(null, "Update", update).build())
+            .addAction(Notification.Action.Builder(null, if (ready) "Install now" else "Update", update).build())
             .setAutoCancel(true)
             .build()
         ctx.getSystemService(NotificationManager::class.java).notify(UPDATE_ID, n)

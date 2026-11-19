@@ -136,8 +136,9 @@ class LinkService : Service() {
         // Look for a new version now and then (Updates.check notifies once per version).
         scope.launch {
             while (true) {
+                // (Checks at most every few hours; a new version downloads in the background on Wi-Fi.)
                 com.droidlink.app.feature.Updates.check(this@LinkService)
-                kotlinx.coroutines.delay(6 * 3600_000L)
+                kotlinx.coroutines.delay(30 * 60_000L)
             }
         }
     }

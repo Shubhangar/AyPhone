@@ -74,6 +74,7 @@ struct ContentView: View {
             }
             .animation(Theme.spring, value: adb.message)
         }
+        .background(FullScreenToolbarHider())
         .overlay { LaunchSplash() }
         .preferredColorScheme(.dark)
         .tint(Theme.cyan)
@@ -222,5 +223,37 @@ struct InfoBanner: View {
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.white.opacity(0.1)))
         .shadow(color: .black.opacity(0.15), radius: 14, y: 6)
+    }
+}
+
+/// In full screen macOS draws the window's toolbar as a solid strip of its own (SwiftUI's
+/// toolbar background setting doesn't reach it), a grey band over the top of the pages, which
+/// run up to the top edge. The toolbar only holds the sidebar button, so it's hidden while in
+/// full screen and comes back on leaving it.
+private struct FullScreenToolbarHider: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { Watcher() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    final class Watcher: NSView {
+        private var observers: [NSObjectProtocol] = []
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            observers.forEach(NotificationCenter.default.removeObserver)
+            observers = []
+            guard let window else { return }
+            window.titlebarAppearsTransparent = true
+            window.titlebarSeparatorStyle = .none
+            let center = NotificationCenter.default
+            observers.append(center.addObserver(forName: NSWindow.willEnterFullScreenNotification, object: window, queue: .main) { [weak window] _ in
+                window?.toolbar?.isVisible = false
+            })
+            observers.append(center.addObserver(forName: NSWindow.didExitFullScreenNotification, object: window, queue: .main) { [weak window] _ in
+                window?.toolbar?.isVisible = true
+            })
+            if window.styleMask.contains(.fullScreen) { window.toolbar?.isVisible = false }
+        }
+
+        deinit { observers.forEach(NotificationCenter.default.removeObserver) }
     }
 }

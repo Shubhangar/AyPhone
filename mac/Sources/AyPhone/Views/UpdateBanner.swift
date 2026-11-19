@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// "Update available": in the overview (full) and the menu bar (compact). One click downloads,
-/// checks and installs the new version, then AyPhone relaunches.
+/// "Update ready" (downloaded in the background) or "Update available": in the overview (full)
+/// and the menu bar (compact). One click installs the new version, then AyPhone relaunches.
 struct UpdateBanner: View {
     @EnvironmentObject private var state: AppState
     var compact = false
@@ -13,7 +13,7 @@ struct UpdateBanner: View {
                 HStack(spacing: compact ? 10 : 14) {
                     IconBadge(symbol: "arrow.down.circle.fill", colors: [Theme.indigo, Theme.pink], size: compact ? 26 : 36)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Update available").font(compact ? .callout.weight(.semibold) : .headline)
+                        Text(state.updater.ready ? "Update ready" : "Update available").font(compact ? .callout.weight(.semibold) : .headline)
                         Text(detail(release, phase)).font(compact ? .caption : .callout).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -21,7 +21,7 @@ struct UpdateBanner: View {
                     if phase == .downloading || phase == .installing {
                         ProgressView().controlSize(.small)
                     } else {
-                        Button("Update") { state.updater.install() }.buttonStyle(.glass)
+                        Button(state.updater.ready ? "Install now" : "Update") { state.updater.install() }.buttonStyle(.pill)
                     }
                 }
             }
@@ -33,7 +33,9 @@ struct UpdateBanner: View {
         case .downloading: "Downloading AyPhone \(release.version)…"
         case .installing: "Installing. AyPhone will reopen."
         case .failed(let reason): reason
-        case .idle: compact ? "AyPhone \(release.version)" : "AyPhone \(release.version) is ready. It installs and reopens in a few seconds."
+        case .idle where state.updater.ready:
+            compact ? "AyPhone \(release.version)" : "AyPhone \(release.version) is downloaded. It installs and reopens in a few seconds."
+        case .idle: compact ? "AyPhone \(release.version)" : "AyPhone \(release.version) is out. It downloads, installs and reopens in a few seconds."
         }
     }
 }
